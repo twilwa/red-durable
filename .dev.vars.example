@@ -1,0 +1,14 @@
+# Fill privately for LOCAL use. Blank values fail closed.
+# Use two DIFFERENT cryptographically random values, each at least 32 characters.
+OWNER_TOKEN=""
+BRIDGE_TOKEN=""
+# No model API key is required for the subscription bridge.
+
+# Optional private Discord transport. Disabled until owner-assisted setup.
+DISCORD_ENABLED="false"
+DISCORD_RELAY_TOKEN=""
+DISCORD_GUILD_ID=""
+DISCORD_CHANNEL_ID=""
+DISCORD_OWNER_ID=""
+DISCORD_BOT_ID=""
+DISCORD_SESSION=""

@@ -1,0 +1,19 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "red-durable",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-09",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    "run_worker_first": true,
+  },
+  "durable_objects": {
+    "bindings": [{ "name": "RED", "class_name": "RedAgent" }],
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RedAgent"] }],
+  "worker_loaders": [{ "binding": "LOADER" }],
+  "vars": { "MODEL_ID": "gpt-4.1-mini", "SUMMARY_MODEL_ID": "gpt-4.1-mini" },
+  "observability": { "enabled": false },
+}

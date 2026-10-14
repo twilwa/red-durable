@@ -1,0 +1,16 @@
+[Unit]
+Description=Personal Red Durable subscription inference bridge
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=simple
+WorkingDirectory=%h/red-durable
+EnvironmentFile=%h/.config/red-durable-bridge/runner.env
+ExecStart=/usr/bin/node bridge/cli.mjs run
+Restart=on-failure
+RestartSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+UMask=0077
+[Install]
+WantedBy=default.target

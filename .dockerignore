@@ -1,0 +1,33 @@
+node_modules
+.wrangler
+dist
+.env*
+.dev.vars
+.dev.vars.*
+**/credentials*.json
+**/.credentials*.tmp
+**/credential-update.json
+**/.credential-update*.tmp
+**/journal.json
+**/.journal*.tmp
+**/host.json
+**/.host*.tmp
+**/runner.env
+**/runner.lock
+**/*.sqlite
+**/*.sqlite-*
+**/*.db
+**/*.db-*
+**/*.log
+artifacts
+coverage
+playwright-report
+test-results
+.git
+
+# Private Discord relay configuration.
+**/relay.env
+
+# Private provider registration metadata.
+**/openai-registration.json
+**/.openai-registration*.tmp

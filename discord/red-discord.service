@@ -1,0 +1,35 @@
+# Example only. Installing/enabling this unit is a separate owner action.
+[Unit]
+Description=red private Discord relay (outbound only)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=red-discord
+Group=red-discord
+WorkingDirectory=/opt/red-durable
+EnvironmentFile=/etc/red-discord/relay.env
+ExecStart=/usr/bin/node /opt/red-durable/discord/cli.mjs run
+StateDirectory=red-discord
+StateDirectoryMode=0700
+UMask=0077
+Restart=on-failure
+RestartPreventExitStatus=78
+RestartSec=15
+TimeoutStopSec=75
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+ReadWritePaths=/var/lib/red-discord
+
+[Install]
+WantedBy=multi-user.target

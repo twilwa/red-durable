@@ -1,0 +1,38 @@
+node_modules/
+.wrangler/
+.dev.vars
+.dev.vars.*
+!.dev.vars.example
+.env*
+dist/
+
+# Private bridge storage, including staging and interrupted atomic writes.
+credentials*.json
+.credentials*.tmp
+credential-update.json
+.credential-update*.tmp
+journal.json
+.journal*.tmp
+host.json
+.host*.tmp
+runner.env
+runner.lock
+
+# Local runtime data, diagnostics, and generated test artifacts.
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.log
+artifacts/
+coverage/
+playwright-report/
+test-results/
+.DS_Store
+
+# Private Discord relay configuration.
+relay.env
+
+# Non-secret OAuth registration bound to the private host.
+openai-registration.json
+.openai-registration*.tmp

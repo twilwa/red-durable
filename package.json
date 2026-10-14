@@ -1,0 +1,38 @@
+{
+  "name": "red-durable",
+  "version": "0.1.0",
+  "description": "Private durable Pi companion with source-versioned behavior, evidence-linked memory and subscription inference",
+  "scripts": {
+    "dev": "wrangler dev",
+    "typecheck": "tsc && tsc -p tsconfig.ui.json",
+    "test": "node --experimental-strip-types --test test/*.test.* && vitest run tests/",
+    "build": "wrangler deploy --dry-run --outdir dist",
+    "check": "npm run typecheck && npm test && npm run build",
+    "test:runtime": "node test/runtime.mjs",
+    "format": "prettier --no-editorconfig --write \"src/**/*.{ts,js}\" \"public/**/*.{html,js,css}\" \"bridge/**/*.{mjs,json}\" \"discord/**/*.{mjs,json}\" \"shared/**/*.ts\" \"test/**/*.{ts,mjs}\" \"tests/**/*.ts\" \"docs/**/*.md\" \"ui/**/*.ts\" \"*.{json,jsonc,md}\"",
+    "format:check": "prettier --no-editorconfig --check \"src/**/*.{ts,js}\" \"public/**/*.{html,js,css}\" \"bridge/**/*.{mjs,json}\" \"discord/**/*.{mjs,json}\" \"shared/**/*.ts\" \"test/**/*.{ts,mjs}\" \"tests/**/*.ts\" \"docs/**/*.md\" \"ui/**/*.ts\" \"*.{json,jsonc,md}\"",
+    "discord:check": "node discord/cli.mjs check",
+    "discord:run": "node discord/cli.mjs run",
+    "bridge:serve": "node bridge/cli.mjs serve",
+    "bridge:run": "node bridge/cli.mjs run",
+    "bridge:status": "node bridge/cli.mjs status",
+    "test:provider-browser": "node test/provider-browser.mjs"
+  },
+  "license": "UNLICENSED",
+  "type": "module",
+  "dependencies": {
+    "@cloudflare/codemode": "0.5.3",
+    "@earendil-works/pi-ai": "1.1.0",
+    "@earendil-works/pi-durable": "1.1.0",
+    "agents": "0.28.0"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261009.1",
+    "playwright-core": "1.64.0",
+    "prettier": "3.9.9",
+    "typescript": "7.0.2",
+    "vitest": "5.0.3",
+    "wrangler": "4.149.0"
+  },
+  "private": true
+}

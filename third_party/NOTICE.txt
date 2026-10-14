@@ -1,0 +1,42 @@
+Pi Durable documentation attribution
+
+src/skill-docs.ts embeds documentation from @earendil-works/pi-durable version
+1.1.0 for offline, version-pinned agent guidance. The installed package declares
+the MIT license. Its upstream copyright and license are reproduced in
+PI-LICENSE.txt.
+
+Upstream: https://github.com/earendil-works/pi
+License source: https://github.com/earendil-works/pi/blob/main/LICENSE
+
+The summary-tree implementation is independently written from the OptMem /
+UniiChat design attributed to Victor Taelin:
+https://gist.github.com/VictorTaelin/91837951a5ce5b38f341ec1ba1df6449
+
+The offline evaluation preparation is inspired by TeleTune:
+https://arxiv.org/abs/2610.05437
+It is not the authors' implementation and has not reproduced their results.
+
+Other dependencies retain their own licenses. They are installed through the
+pinned package lock and are not copied into the source archive.
+
+Durable Pi interface adaptation
+
+The browser shell, panel navigation, warm dark design, composer and optimistic
+state-editor patterns are adapted from disler/durable-pi by IndyDevDan, pinned to
+commit 37165c619573dbaf425463038bbffecfe576beec. The upstream MIT copyright and
+license are reproduced in DURABLE-PI-LICENSE.txt.
+
+Reviewed upstream source:
+- apps/dpi-playground/apps/dpi-playground-fe/src/App.vue
+- apps/dpi-playground/apps/dpi-playground-fe/src/style.css
+- apps/dpi-playground/apps/dpi-playground-fe/src/components/Inspector.vue
+- apps/dpi-playground/apps/dpi-playground-fe/src/components/NetworkSidebar.vue
+- apps/dpi-playground/apps/dpi-playground-fe/src/components/Composer.vue
+
+Source: https://github.com/disler/durable-pi/tree/37165c619573dbaf425463038bbffecfe576beec
+
+This is a frontend adaptation, not a drop-in copy of the upstream runtime.
+red retains its same-origin owner API, Cloudflare Durable Object state, approval
+boundaries and in-memory-only browser credentials. The upstream device network,
+Express hub, SQLite registry, SDK, provider credentials and persistent browser
+storage are not imported. Third-party scripts were not executed.

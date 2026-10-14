@@ -1,0 +1,527 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta
+      name="viewport"
+      content="width=device-width,initial-scale=1,viewport-fit=cover"
+    />
+    <meta name="theme-color" content="#191314" />
+    <title>red · a lasting conversation</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#prompt">Skip to conversation</a>
+    <div class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brandmark" aria-hidden="true">r</span><strong>red</strong
+          ><span class="brand-note">a lasting conversation</span>
+        </div>
+        <div id="topActions" class="top-actions" hidden>
+          <span id="status" class="connection" role="status">Connecting…</span>
+          <button id="refresh" class="quiet" title="Refresh from red">
+            Refresh
+          </button>
+          <button id="disconnect" class="quiet">Lock</button>
+        </div>
+      </header>
+      <div id="errorBanner" class="error-banner" hidden>
+        <p id="error" role="alert"></p>
+        <button id="dismissError" aria-label="Dismiss error">×</button>
+      </div>
+      <section id="login" class="login-view" aria-labelledby="loginTitle">
+        <div class="login-story">
+          <span class="eyebrow">YOUR PRIVATE COMPANION</span>
+          <h1 id="loginTitle">A window into red.<br />A place to pick up.</h1>
+          <p>
+            Your conversation, memory and approved changes live with red. This
+            browser is simply where you meet.
+          </p>
+          <div class="login-note">
+            <span class="live-dot"></span>Closing this tab doesn’t erase your
+            conversation.
+          </div>
+        </div>
+        <form id="connect" class="login-card">
+          <h2>Connect to your space</h2>
+          <p>
+            Use the owner token configured for this red instance. It stays in
+            this tab’s memory.
+          </p>
+          <label for="token">Owner token</label
+          ><input
+            id="token"
+            type="password"
+            autocomplete="off"
+            placeholder="Enter privately here"
+            required
+          />
+          <details class="session-options">
+            <summary>Session settings</summary>
+            <label for="session">Session name</label
+            ><input
+              id="session"
+              value="default"
+              pattern="[a-zA-Z0-9_-]{1,64}"
+              required
+            />
+            <p>
+              Use the same name on every device to return to the same red. A
+              different name opens separate memory.
+            </p>
+          </details>
+          <button id="connectButton" class="primary">Connect</button
+          ><span id="connectStatus" role="status"></span>
+          <p class="footnote">
+            No token, drafts or conversation are saved in browser storage. Lock
+            clears this tab.
+          </p>
+        </form>
+      </section>
+      <main id="workspace" class="workspace" hidden>
+        <aside
+          id="navigation"
+          class="navigation"
+          aria-label="Your space"
+          hidden
+        >
+          <div class="panel-heading">
+            <span class="eyebrow">YOUR SPACE</span
+            ><button
+              id="closeNav"
+              class="icon-button"
+              aria-label="Close navigation"
+            >
+              ×
+            </button>
+          </div>
+          <button id="chatTab" class="nav-item selected" aria-current="page">
+            <span class="nav-icon" aria-hidden="true">◌</span
+            ><span>Conversation<small id="sessionName">default</small></span>
+          </button>
+          <button id="workNav" class="nav-item">
+            <span class="nav-icon" aria-hidden="true">✓</span
+            ><span
+              >Open commitments<small id="workCount"
+                >Load when opened</small
+              ></span
+            >
+          </button>
+          <div class="nav-divider"></div>
+          <span class="eyebrow nav-label">GET TO KNOW RED</span>
+          <button id="memoryNav" class="nav-item">Memory & personality</button
+          ><button id="skillsNav" class="nav-item">Learned skills</button
+          ><button id="changesNav" class="nav-item">Changes to review</button>
+          <div class="nav-bottom">
+            <p>One session. A lasting memory. Changes stay yours to approve.</p>
+            <button id="connectionNav" class="text-button">
+              Connect providers
+            </button>
+          </div>
+        </aside>
+        <section
+          id="chat"
+          class="chat-panel"
+          aria-label="Conversation with red"
+        >
+          <div class="chat-header">
+            <button
+              id="toggleNav"
+              class="icon-button"
+              aria-label="Open navigation"
+              aria-controls="navigation"
+              aria-expanded="false"
+            >
+              ☰
+            </button>
+            <div class="conversation-title">
+              <h1>Conversation</h1>
+              <span id="conversationSubtitle">Private · durable memory</span>
+            </div>
+            <button
+              id="toggleInspector"
+              class="secondary"
+              aria-controls="inspector"
+              aria-expanded="false"
+            >
+              About red
+            </button>
+          </div>
+          <div
+            id="chatScroll"
+            class="chat-scroll"
+            tabindex="0"
+            aria-label="Conversation history"
+          >
+            <div id="emptyChat" class="chat-empty">
+              <div class="agent-orb" aria-hidden="true">r</div>
+              <span class="eyebrow">ROOM TO THINK TOGETHER</span>
+              <h2>What’s on your mind?</h2>
+              <p>Start wherever you are. We can keep the thread from here.</p>
+              <button id="startCharter" class="text-button">
+                Shape how red shows up for you ↗
+              </button>
+            </div>
+            <div
+              id="messages"
+              role="log"
+              aria-live="polite"
+              aria-relevant="additions text"
+            ></div>
+          </div>
+          <button id="newMessages" class="new-messages" hidden>
+            New messages ↓
+          </button>
+          <div class="composer-region">
+            <div id="inferenceErrors"></div>
+            <form id="composer" class="composer">
+              <label for="prompt" class="sr-only">Message red</label
+              ><textarea
+                id="prompt"
+                placeholder="Talk to red…"
+                required
+                rows="3"
+              ></textarea>
+              <div class="composer-toolbar">
+                <span id="memory" class="context-note">Durable memory</span
+                ><button id="abort" type="button" class="quiet" disabled>
+                  Stop</button
+                ><button id="send" class="primary" disabled>Send ↑</button>
+              </div>
+            </form>
+            <p class="composer-footnote">
+              <span id="activityNote">Your conversation stays with red.</span
+              ><span>Ctrl / ⌘ + Enter to send</span>
+            </p>
+          </div>
+        </section>
+        <aside
+          id="inspector"
+          class="inspector"
+          aria-labelledby="inspectorTitle"
+          hidden
+        >
+          <div class="inspector-heading">
+            <div>
+              <span class="eyebrow">A LITTLE MORE CONTEXT</span>
+              <h2 id="inspectorTitle">About red</h2>
+            </div>
+            <button
+              id="closeInspector"
+              class="icon-button"
+              aria-label="Close details"
+            >
+              ×
+            </button>
+          </div>
+          <div class="inspector-tabs" role="tablist" aria-label="About red">
+            <button
+              id="continuityTab"
+              role="tab"
+              aria-controls="continuity"
+              aria-selected="true"
+              tabindex="0"
+            >
+              Memory</button
+            ><button
+              id="commitmentsTab"
+              role="tab"
+              aria-controls="commitmentPanel"
+              aria-selected="false"
+              tabindex="-1"
+            >
+              Work</button
+            ><button
+              id="skillsTab"
+              role="tab"
+              aria-controls="skills"
+              aria-selected="false"
+              tabindex="-1"
+            >
+              Skills</button
+            ><button
+              id="releasesTab"
+              role="tab"
+              aria-controls="evolution"
+              aria-selected="false"
+              tabindex="-1"
+            >
+              Changes</button
+            ><button
+              id="connectionTab"
+              role="tab"
+              aria-controls="connection"
+              aria-selected="false"
+              tabindex="-1"
+            >
+              Providers
+            </button>
+          </div>
+          <p id="panelStatus" class="panel-status" role="status"></p>
+          <div class="inspector-body">
+            <section
+              id="continuity"
+              role="tabpanel"
+              aria-labelledby="continuityTab"
+            >
+              <h3>Personality & presence</h3>
+              <p>
+                Your charter shapes how red shows up. Memory is attributed
+                evidence, and never adds permissions.
+              </p>
+              <label for="charter">Your charter</label
+              ><textarea
+                id="charter"
+                rows="7"
+                maxlength="4000"
+                placeholder="How should red show up for you?"
+              ></textarea>
+              <p id="charterStatus" class="hint" role="status"></p>
+              <div class="actions">
+                <button id="resetCharter" class="secondary" disabled>
+                  Load saved</button
+                ><button id="saveCharter" class="primary" disabled>
+                  Save charter
+                </button>
+              </div>
+              <div class="section-divider"></div>
+              <h3>What red remembers</h3>
+              <label for="memorySearch" class="sr-only">Filter memories</label
+              ><input
+                id="memorySearch"
+                type="search"
+                placeholder="Find a memory…"
+              />
+              <div id="beliefs"></div>
+              <p class="hint">
+                Corrections preserve the original history. Erasure is not
+                available here yet.
+              </p>
+              <details id="memoryDetails" class="raw">
+                <summary>Working memory view</summary>
+                <button id="loadMemory" class="secondary">
+                  Load current view
+                </button>
+                <pre id="memoryView"></pre>
+              </details>
+            </section>
+            <section
+              id="commitmentPanel"
+              role="tabpanel"
+              aria-labelledby="commitmentsTab"
+              hidden
+            >
+              <h3>Things to return to</h3>
+              <p>
+                Commitments are an explicit record of work. They don’t grant
+                permission to take actions.
+              </p>
+              <div id="commitments"></div>
+            </section>
+            <section
+              id="skills"
+              role="tabpanel"
+              aria-labelledby="skillsTab"
+              hidden
+            >
+              <h3>Learned skills</h3>
+              <p>
+                Reusable ways of working, with clear triggers and exclusions.
+                You decide what becomes active.
+              </p>
+              <button id="proposeSkill" class="secondary">
+                Ask red to propose a skill
+              </button>
+              <div id="skillPanel"></div>
+            </section>
+            <section
+              id="evolution"
+              role="tabpanel"
+              aria-labelledby="releasesTab"
+              hidden
+            >
+              <h3>Review before release</h3>
+              <p>
+                Changes affect red’s isolated behavior facet. The supervisor,
+                authentication and Pi harness remain protected.
+              </p>
+              <div class="callout">
+                Code rollback keeps the existing database. It does not undo data
+                migrations.
+              </div>
+              <div id="revisions"></div>
+              <details id="sourceEditor" class="raw">
+                <summary>Stage your own source</summary>
+                <p>Worker-compatible JavaScript exporting MutableAgent.</p>
+                <button id="loadTemplate" class="secondary">
+                  Load starter source</button
+                ><label for="source">Revision source</label
+                ><textarea id="source" rows="16" spellcheck="false"></textarea
+                ><label for="description">What changes?</label
+                ><input
+                  id="description"
+                  maxlength="2000"
+                  placeholder="Describe this revision"
+                /><button id="stage" class="primary">Stage for review</button>
+              </details>
+              <div class="section-divider"></div>
+              <button id="reviewSkills" class="text-button">
+                Review learned skills →
+              </button>
+            </section>
+            <section
+              id="connection"
+              role="tabpanel"
+              aria-labelledby="connectionTab"
+              hidden
+            >
+              <div class="provider-heading">
+                <div>
+                  <span class="eyebrow">YOUR INFERENCE HOST</span>
+                  <h3>Connect a provider</h3>
+                </div>
+                <button id="refreshProviders" class="quiet" type="button">
+                  Refresh
+                </button>
+              </div>
+              <p>
+                Start with your ChatGPT subscription, or explicitly choose a
+                metered API. Your owner token and provider sign-in are separate.
+              </p>
+              <p id="providerStatus" class="hint" role="status"></p>
+              <div id="providerGuide" class="callout" hidden>
+                <strong>Open red on the trusted inference host</strong>
+                <p>
+                  Run <code>npm run bridge:serve</code> there, then open the
+                  local bridge UI in a browser on that same host.
+                </p>
+                <a id="localBridgeLink" href="http://127.0.0.1:8788" hidden
+                  >Open the local bridge UI ↗</a
+                >
+                <p class="hint">
+                  127.0.0.1 refers to the computer running your browser. It does
+                  not connect to a remote inference host.
+                </p>
+              </div>
+              <div id="providerCards" class="provider-cards"></div>
+              <form
+                id="providerKeyForm"
+                class="provider-form"
+                hidden
+                autocomplete="off"
+              >
+                <h4 id="providerKeyTitle">Connect an API key</h4>
+                <p class="callout">
+                  This is a metered API. Using its models consumes your existing
+                  provider credits or bills your provider account. Saving a key
+                  does not select a model or start inference.
+                </p>
+                <p class="hint">
+                  The key will be stored on this trusted inference host. It is
+                  never saved in browser storage or sent to the Worker.
+                </p>
+                <label for="providerKey">API key</label>
+                <input
+                  id="providerKey"
+                  type="password"
+                  autocomplete="off"
+                  spellcheck="false"
+                  required
+                />
+                <div class="actions">
+                  <button
+                    id="cancelProviderKey"
+                    type="button"
+                    class="secondary"
+                  >
+                    Cancel</button
+                  ><button id="saveProviderKey" class="primary">
+                    Save key on this host
+                  </button>
+                </div>
+              </form>
+              <section
+                id="providerFlow"
+                class="provider-form"
+                aria-labelledby="providerFlowTitle"
+                hidden
+              >
+                <h4 id="providerFlowTitle">
+                  Connect your ChatGPT subscription
+                </h4>
+                <p id="providerFlowStatus" role="status" tabindex="-1"></p>
+                <a
+                  id="providerAuthLink"
+                  class="provider-auth-link"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  hidden
+                  >Open OpenAI sign-in ↗</a
+                >
+                <p class="hint">
+                  Complete sign-in yourself on OpenAI’s page. OAuth credentials
+                  stay on this inference host.
+                </p>
+                <form id="providerResponseForm" autocomplete="off" hidden>
+                  <label id="providerPromptLabel" for="providerResponse"
+                    >One-time sign-in response</label
+                  >
+                  <input
+                    id="providerResponse"
+                    type="password"
+                    autocomplete="off"
+                    spellcheck="false"
+                    required
+                  />
+                  <p class="hint">
+                    Enter only the one-time response requested above. Never
+                    enter your password here.
+                  </p>
+                  <button id="submitProviderResponse" class="primary">
+                    Continue sign-in
+                  </button>
+                </form>
+                <button id="cancelProviderFlow" class="secondary" type="button">
+                  Cancel sign-in
+                </button>
+              </section>
+              <div class="section-divider"></div>
+              <h3>Choose a model</h3>
+              <label for="modelSelect">Available models</label
+              ><select id="modelSelect">
+                <option value="">Waiting for bridge</option></select
+              ><button id="setModel" class="secondary" disabled>
+                Use model
+              </button>
+              <p id="modelBilling" class="hint"></p>
+              <p id="bridgeStatus" class="hint"></p>
+              <p class="hint">
+                Owner access and provider sign-in are separate. Provider
+                credentials stay on the trusted inference host.
+              </p>
+              <div id="connectionDetails"></div>
+              <details class="raw">
+                <summary>Runtime details</summary>
+                <pre id="runtimeDetails"></pre>
+              </details>
+              <div class="section-divider"></div>
+              <p class="hint">
+                Interface adapted from IndyDevDan’s MIT-licensed
+                <a
+                  href="https://github.com/disler/durable-pi/tree/37165c619573dbaf425463038bbffecfe576beec"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  >Durable Pi playground</a
+                >. red uses its own protected API.
+              </p>
+            </section>
+          </div>
+        </aside>
+      </main>
+      <p id="notice" class="notice" role="status" hidden></p>
+    </div>
+    <script src="/api.js"></script>
+    <script src="/app.js"></script>
+  </body>
+</html>
