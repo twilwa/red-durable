@@ -255,3 +255,34 @@ npm run test:provider-browser
 Set `CHROMIUM_PATH` if the installed Chromium/Chrome is not in the harness's
 standard macOS/Linux location. Successful synthetic browser QA still does not
 establish a real subscription or API-key connection.
+
+## Local development launcher follow-up — 2026-10-15
+
+`npm run bridge:dev` now reads this checkout's existing `.dev.vars` privately and
+maps `OWNER_TOKEN`/`BRIDGE_TOKEN` into the bridge's in-memory configuration. It
+defaults to the local Wrangler origin, default session and separate setup port;
+explicit overrides remain supported. There is no second credential file,
+credential migration, printed token, shell evaluation or change to production
+`bridge:serve`. Relative paths are anchored to the checkout rather than the
+calling shell's directory. Setup documentation now uses the visible **Providers**
+tab label.
+
+Nine additional synthetic launcher tests cover defaults, explicit precedence,
+blank/missing/short/equal credentials, target/session/port conflicts, inert dotenv
+content, redacted failures, no environment/file mutation and working-directory
+independence. The final aggregate is **255 tests: 246 Node and 9 Vitest**; both
+TypeScript checks, full formatting and dry-run bundling pass. Independent review
+also reran the launcher, server and provider-security boundary fixtures. No real
+`.dev.vars` values were loaded or used during these tests.
+
+Separate isolated Mac browser QA passed for source commit
+`931859da500c384c2e1779ba6d1c5183d5f5da9c`, using desktop 1280×960 and
+mobile 390×844 Chrome views. It covered repeated clicks, cancellation, expiration,
+unsafe auth URL rejection, secret clearing, metered approval/model switches,
+local removal, focus/mobile behavior, empty browser storage and no external
+requests or page errors. The UI, browser transport and fake-provider harness
+files are byte-identical in this launcher follow-up, so that browser evidence
+carries forward. The cloud host's Chromium launch restriction described above
+remains; real account consent and provider inference remain untested. The Mac's
+existing development process and live source were left untouched during that
+isolated QA.

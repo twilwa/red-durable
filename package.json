@@ -16,7 +16,8 @@
     "bridge:serve": "node bridge/cli.mjs serve",
     "bridge:run": "node bridge/cli.mjs run",
     "bridge:status": "node bridge/cli.mjs status",
-    "test:provider-browser": "node test/provider-browser.mjs"
+    "test:provider-browser": "node test/provider-browser.mjs",
+    "bridge:dev": "node bridge/dev.mjs"
   },
   "license": "UNLICENSED",
   "type": "module",

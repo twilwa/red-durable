@@ -3,6 +3,7 @@
 OWNER_TOKEN=""
 BRIDGE_TOKEN=""
 # No model API key is required for the subscription bridge.
+# npm run bridge:dev privately reuses these two tokens for the local setup UI.
 
 # Optional private Discord transport. Disabled until owner-assisted setup.
 DISCORD_ENABLED="false"

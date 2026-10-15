@@ -75,9 +75,10 @@ For an authenticated local UI, copy `.dev.vars.example` to `.dev.vars` and priva
 
 ## Connect providers in the local UI
 
-Keep `npm run dev` running. Start the separate trusted-host setup bridge with
-`npm run bridge:serve` after privately configuring its owner/bridge credentials,
-then open its printed loopback URL and **About red → Connection**. ChatGPT uses
+Keep `npm run dev` running. In a second terminal, run `npm run bridge:dev`.
+It privately reuses the two tokens already in this project's `.dev.vars`, without
+copying or printing them. Open its printed loopback URL and
+**About red → Providers**. ChatGPT uses
 owner-operated browser sign-in; OpenRouter and OpenCode Zen use locally stored
 API keys. Saving a key does not choose a model. Go remains unavailable until
 coding-only sessions can be isolated from general companion/memory traffic.

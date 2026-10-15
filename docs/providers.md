@@ -7,41 +7,64 @@ No installation/test performs sign-in, purchases credits or calls a live model.
 
 ## Start alongside the existing development server
 
-Keep the existing `npm run dev` terminal running. This is a second process and
-port; it does not stop or reconfigure Wrangler, import its state, or migrate any
-credentials from another app.
+Keep the existing `npm run dev` terminal running. In a second terminal, from the
+same project checkout, run:
 
-1. On the same trusted computer as the browser, prepare an owner-only environment
-   file outside the repository. For example, use a private editor for
-   `~/.config/red-durable-bridge/runner.env`, with directory mode 0700 and file
-   mode 0600. Never paste credentials into chat, a shell command/history or Git.
-2. Set these values privately:
+```sh
+npm run bridge:dev
+```
 
-   ```text
-   RED_URL=http://127.0.0.1:8787
-   RED_SESSION=default
-   RED_OWNER_TOKEN=<the exact OWNER_TOKEN used by this Worker>
-   RED_BRIDGE_TOKEN=<the separate BRIDGE_TOKEN used by this Worker>
-   ```
+That is enough when this project's `.dev.vars` already contains its two distinct
+`OWNER_TOKEN` and `BRIDGE_TOKEN` values. The launcher reads the file privately,
+maps those values to the bridge in memory, and starts the separate setup UI at
+`http://127.0.0.1:8788`. Open that address, unlock with the existing owner token
+and session name, then open **About red → Providers**. Saving a provider key
+does not select a model.
 
-   Use the actual Wrangler port and existing session name. The two credentials
-   must be different and at least 32 characters. `RED_BRIDGE_DIR` optionally
-   selects the private credential directory; `RED_SETUP_PORT` defaults to 8788.
-   Node does not automatically read Wrangler's `.dev.vars`.
+The launcher does not print the tokens, copy them to another file, rewrite
+`.dev.vars`, import other apps' credentials, or stop/reconfigure Wrangler. It
+uses Node's dotenv parser without evaluating shell text or applying `NODE_OPTIONS`
+from the file. Unrelated API keys and Discord settings in `.dev.vars` are ignored.
+Blank, short or identical owner/bridge tokens fail before the bridge starts.
+Keep `.dev.vars` private and outside Git. Node 24 is required as elsewhere in this
+project.
 
-3. Start the bridge from the repository:
+Defaults are `RED_URL=http://127.0.0.1:8787`, `RED_SESSION=default` and setup
+port 8788. If the existing dev server uses another port or session, override only
+those non-secret values, for example:
 
-   ```sh
-   node --env-file="$HOME/.config/red-durable-bridge/runner.env" bridge/cli.mjs serve
-   ```
+```sh
+RED_URL=http://127.0.0.1:8790 RED_SESSION=my-session npm run bridge:dev
+```
 
-   If the variables are already supplied privately in the process environment,
-   `npm run bridge:serve` is equivalent. Open the printed
-   `http://127.0.0.1:8788` address, unlock with the existing owner token and
-   configured session, then open **About red → Connection**.
+Explicit process `RED_*` values take priority. Process `OWNER_TOKEN` and
+`BRIDGE_TOKEN` aliases come next; file `RED_*` values and then file worker-token
+aliases follow. An explicitly blank override fails rather than falling back.
+`RED_SETUP_PORT` chooses another setup port (`0` selects a free port).
+`RED_BRIDGE_DIR` optionally selects an existing private provider-store directory;
+a relative path resolves from the project root. The `.dev.vars` file also always
+resolves from the launcher's checkout, not from the calling shell's directory.
+The launcher neither searches parent directories nor loads another checkout's
+configuration. The owner and bridge credentials must be distinct and at least
+32 characters.
 
-4. Connect a provider and explicitly choose a model. Saving a key does not switch
-   models, and a failed provider never falls back to another provider.
+### Explicit production/trusted-host configuration
+
+The existing `npm run bridge:serve` and `bridge:run` commands are unchanged. They
+do not load `.dev.vars` automatically. For an explicitly configured trusted host,
+supply `RED_URL`, `RED_SESSION`, `RED_OWNER_TOKEN` (serve only) and
+`RED_BRIDGE_TOKEN` privately through its existing process environment or a
+separate owner-only runner environment file. For example:
+
+```sh
+node --env-file="$HOME/.config/red-durable-bridge/runner.env" bridge/cli.mjs serve
+```
+
+That advanced file is optional for local development; there is no need to
+re-enter the tokens already present in `.dev.vars`. Do not put secrets into shell
+commands/history, chat or Git. The local-dev launcher deliberately does not
+support auth-host bootstrap; use the documented explicit login procedure for
+that separate operation.
 
 `serve` hosts the same interface and forwards ordinary owner API requests to
 `RED_URL`. Provider setup requests terminate locally. Exact Host, Origin, owner
