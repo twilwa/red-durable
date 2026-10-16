@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -764,4 +764,26 @@ test("real subscription serializer preserves stable cache key across tool rounds
   } finally {
     await f.manager.close();
   }
+});
+
+test("Docker build contexts exclude provider cache identities and their atomic-write temp files", async () => {
+  const text = await readFile(
+    new URL("../.dockerignore", import.meta.url),
+    "utf8",
+  );
+  const patterns = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith("#"));
+  // Static packaging guard: recursive patterns cover a custom RED_BRIDGE_DIR
+  // nested under bridge/, which the bridge Dockerfile otherwise copies.
+  for (const pattern of ["**/prompt-cache.json", "**/.prompt-cache*.tmp"])
+    assert.ok(
+      patterns.includes(pattern),
+      `Missing Docker exclusion: ${pattern}`,
+    );
+  assert.ok(
+    !patterns.some((pattern) => pattern.startsWith("!")),
+    "Negated rules need a fresh review of private cache-store exclusions",
+  );
 });

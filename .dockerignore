@@ -31,3 +31,7 @@ test-results
 # Private provider registration metadata.
 **/openai-registration.json
 **/.openai-registration*.tmp
+
+# Private provider cache routing metadata, including interrupted atomic writes.
+**/prompt-cache.json
+**/.prompt-cache*.tmp
