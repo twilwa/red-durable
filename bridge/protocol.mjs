@@ -72,6 +72,27 @@ export function validateJob(job, now = Date.now()) {
     throw new Error("Invalid bridge context");
   if (JSON.stringify(job).length > MAX_BYTES)
     throw new Error("Bridge job exceeded limit");
+  if (job.summary !== undefined && typeof job.summary !== "boolean")
+    throw new Error("Invalid bridge cache purpose");
+  if (job.cache !== undefined) {
+    const cache = job.cache;
+    if (
+      !cache ||
+      typeof cache !== "object" ||
+      Array.isArray(cache) ||
+      Object.keys(cache).some(
+        (key) => !["version", "namespace", "purpose"].includes(key),
+      ) ||
+      cache.version !== 1 ||
+      typeof cache.namespace !== "string" ||
+      !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+        cache.namespace,
+      ) ||
+      !["conversation", "summary"].includes(cache.purpose) ||
+      cache.purpose !== (job.summary ? "summary" : "conversation")
+    )
+      throw new Error("Invalid bridge cache scope");
+  }
   const options = job.options ?? {};
   if (
     Object.keys(options).some((k) => !["reasoning", "maxTokens"].includes(k)) ||

@@ -48,6 +48,7 @@ adaptation boundary, interaction guarantees and remaining limitations.
 - **Self-inspection:** bounded operational telemetry with no raw credentials, prompts, or private reasoning. Pinned Pi documentation is available through paged tools.
 - **Skill learning:** descriptions specify when and when not to invoke a skill. Proposals include evidence, positive/negative routing examples, immutable revisions, smoke tests, owner review and reversible activation. Full instructions load on demand. The offline held-out evaluator is a preparation tool; real-model improvement has not been measured.
 - **Self-modification:** the agent can read, write and validate executable JavaScript revisions for its `MutableAgent` facet. The owner reviews and activates them. The facet database survives promotion and code rollback.
+- **Provider-specific prefix caching:** deterministic instruction/archive prefixes, isolated conversation/summary routing keys, native short-lived Claude breakpoints and truthful cache-token telemetry. Hits, retention and billing remain provider/model-dependent; see [prompt-caching.md](docs/prompt-caching.md).
 - **Explicit provider choice:** ChatGPT remains the default, with owner-opted-in OpenRouter and OpenCode Zen keys on the trusted host. Metered model selection requires an explicit acknowledgement. Missing sign-in, quota problems, and offline inference never trigger provider fallback.
 
 ### The self-update boundary
@@ -133,7 +134,7 @@ There is no public repository push, infrastructure purchase, OAuth grant, secret
 
 - “Infinite memory” means an expanding stored history with bounded working context. Storage quotas, cost and retrieval quality remain finite. Summaries are lossy indexes; use originals to verify details.
 - Summary generation is eventually consistent. A backlog can temporarily block new work rather than silently discard history.
-- Provider-specific prefix-cache optimizations from the original recipe are not implemented.
+- Prefix caching depends on the selected provider/model, matching content, token thresholds, retention and routing. No live cache-hit, latency, billing or subscription-quota improvement has been measured.
 - There is no per-item erasure/retention UI yet. Corrections preserve history; they do not delete originals from Pi or memory storage. Do not import data you cannot retain under this limitation.
 - No production backup/restore workflow, external messaging channels, voice, arbitrary shell, or autonomous outbound action permissions are configured.
 - The starter facet offers a small persistent counter as a demonstrable extension contract. Useful custom tools are authored through the same tested revision mechanism.

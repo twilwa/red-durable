@@ -5,6 +5,11 @@ import { openrouterProvider } from "@earendil-works/pi-ai/providers/openrouter";
 import { opencodeProvider } from "@earendil-works/pi-ai/providers/opencode";
 import { createChatGPTOAuth } from "./chatgpt-auth.mjs";
 import { validateJob } from "./protocol.mjs";
+import {
+  cacheCapability,
+  cacheIdentity,
+  cachePayload,
+} from "./prompt-cache.mjs";
 
 const LOGIN_MS = 10 * 60 * 1000;
 const CATALOG_MS = 5 * 60 * 1000;
@@ -280,8 +285,10 @@ export function createProviderManager({
   providers,
   modelsFactory = createModels,
   loginTimeoutMs = LOGIN_MS,
+  cachePolicy = "auto",
 } = {}) {
-  if (!store?.credentials) throw new ProviderError("invalid");
+  if (!store?.credentials || !["auto", "off"].includes(cachePolicy))
+    throw new ProviderError("invalid");
   hardenSDKEnvironment();
   const lifecycle = new AbortController();
   let closed = false;
@@ -291,6 +298,38 @@ export function createProviderManager({
   let flow = null;
   let refreshPromise = null;
   let catalogAt = -Infinity;
+  let cacheNamespaces;
+  async function cacheNamespace(provider, rotate = false) {
+    if (!cacheNamespaces) {
+      const stored = await store.read?.("prompt-cache.json");
+      if (
+        stored !== undefined &&
+        (!stored ||
+          stored.version !== 1 ||
+          !stored.providers ||
+          typeof stored.providers !== "object" ||
+          Array.isArray(stored.providers))
+      )
+        throw new ProviderError("invalid");
+      cacheNamespaces = { ...(stored?.providers ?? {}) };
+    }
+    if (
+      cacheNamespaces[provider] !== undefined &&
+      (typeof cacheNamespaces[provider] !== "string" ||
+        !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+          cacheNamespaces[provider],
+        ))
+    )
+      throw new ProviderError("invalid");
+    if (rotate || !cacheNamespaces[provider]) {
+      const next = { ...cacheNamespaces, [provider]: randomUUID() };
+      // openStore always supplies read/write. Minimal injected offline stores
+      // fall back to process-local isolation, never a shared global namespace.
+      await store.write?.("prompt-cache.json", { version: 1, providers: next });
+      cacheNamespaces = next;
+    }
+    return cacheNamespaces[provider];
+  }
   const state = new Map(
     DESCRIPTIONS.map((entry) => [
       entry.id,
@@ -779,6 +818,8 @@ export function createProviderManager({
           subject: credential.subject,
         });
         if (!active(current)) return;
+        await cacheNamespace("openai", true);
+        if (!active(current)) return;
         let wrote = false;
         await store.credentials.modify("openai", async () => {
           if (!active(current)) return undefined;
@@ -860,6 +901,8 @@ export function createProviderManager({
       if (providerId === "openrouter")
         await validateOpenRouterKey(key, lifecycle.signal);
       assertOpen();
+      await cacheNamespace(providerId, true);
+      assertOpen();
       await store.credentials.modify(providerId, async () =>
         lifecycle.signal.aborted
           ? undefined
@@ -901,6 +944,7 @@ export function createProviderManager({
           });
       }
       await store.credentials.delete(providerId);
+      await cacheNamespace(providerId, true);
       const current = state.get(providerId);
       current.generation++;
       Object.assign(current, {
@@ -983,6 +1027,14 @@ export function createProviderManager({
       const credential = await readCredential(entry);
       if (!credential) throw new ProviderError("auth");
       hardenSDKEnvironment();
+      const key = cacheIdentity({
+        hostId: store.hostId,
+        accountNamespace: await cacheNamespace(entry.id),
+        provider: entry.id,
+        model,
+        job,
+      });
+      const capability = cacheCapability(entry.id, model);
       const message = await models.completeSimple(model, job.context, {
         ...(job.options?.reasoning !== undefined
           ? { reasoning: job.options.reasoning }
@@ -990,14 +1042,33 @@ export function createProviderManager({
         ...(job.options?.maxTokens !== undefined
           ? { maxTokens: job.options.maxTokens }
           : {}),
-        ...(entry.id === "opencode-zen"
-          ? { headers: { Authorization: `Bearer ${credential.key}` } }
-          : {}),
-        ...(entry.id === "openai" ? { onPayload: chatGPTPayload } : {}),
+        headers: {
+          ...(entry.id === "opencode-zen"
+            ? {
+                Authorization: `Bearer ${credential.key}`,
+                "User-Agent": "red-durable/0.1.0",
+              }
+            : {}),
+          ...(capability.header ? { [capability.header]: key } : {}),
+        },
+        // Suppress ambient PI_CACHE_RETENTION and Pi's moving last-turn
+        // breakpoints. Only this explicit, model-scoped policy adds hints.
+        cacheRetention: "none",
+        onPayload: (payload) =>
+          cachePayload(
+            entry.id === "openai" ? chatGPTPayload(payload) : payload,
+            {
+              provider: entry.id,
+              model,
+              context: job.context,
+              key,
+              enabled: cachePolicy !== "off",
+            },
+          ),
         fetch: inferenceFetch(entry, model),
         maxRetries: 0,
         timeoutMs: deadline,
-        sessionId: `red-${store.hostId}`,
+        sessionId: key,
         signal: AbortSignal.any([
           lifecycle.signal,
           controller.signal,

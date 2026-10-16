@@ -248,3 +248,29 @@ test("module-default project root is anchored to the launcher rather than the cu
   });
   assert.equal(requested, expected);
 });
+
+test("dev launcher accepts only explicit auto/off prompt-cache policy without ambient cache retention", async () => {
+  const f = await fixture(
+    dotenv + "RED_PROMPT_CACHE=off\nPI_CACHE_RETENTION=long\n",
+  );
+  try {
+    const config = await loadDevEnvironment({ projectRoot: f.root, env: {} });
+    assert.equal(config.RED_PROMPT_CACHE, "off");
+    assert.equal(config.PI_CACHE_RETENTION, undefined);
+    const enabled = await loadDevEnvironment({
+      projectRoot: f.root,
+      env: { RED_PROMPT_CACHE: "auto" },
+    });
+    assert.equal(enabled.RED_PROMPT_CACHE, "auto");
+    for (const value of ["", "long", "24h", "write"])
+      await assert.rejects(
+        loadDevEnvironment({
+          projectRoot: f.root,
+          env: { RED_PROMPT_CACHE: value },
+        }),
+        (error) => error.code === "cache",
+      );
+  } finally {
+    await f.close();
+  }
+});

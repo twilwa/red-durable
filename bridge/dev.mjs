@@ -24,6 +24,7 @@ const messages = {
     "RED_SESSION must contain 1–64 letters, numbers, underscores or hyphens.",
   port: "RED_SETUP_PORT must be an integer from 0 to 65535 and differ from the local upstream port. Zero chooses a free port.",
   directory: "RED_BRIDGE_DIR must be a nonempty local path.",
+  cache: "RED_PROMPT_CACHE must be auto or off.",
   bootstrap:
     "The local dev launcher cannot bootstrap another auth host. Use the explicit login procedure instead.",
 };
@@ -108,6 +109,9 @@ export async function loadDevEnvironment({
       upstreamPort === port)
   )
     throw new DevConfigurationError("port");
+  const cachePolicy = value("RED_PROMPT_CACHE");
+  if (cachePolicy !== undefined && !["auto", "off"].includes(cachePolicy))
+    throw new DevConfigurationError("cache");
   const directory = value("RED_BRIDGE_DIR");
   if (
     directory !== undefined &&
@@ -124,6 +128,7 @@ export async function loadDevEnvironment({
     RED_URL: origin,
     RED_SESSION: session,
     RED_SETUP_PORT: String(port),
+    ...(cachePolicy === undefined ? {} : { RED_PROMPT_CACHE: cachePolicy }),
     ...(directory === undefined
       ? {}
       : {

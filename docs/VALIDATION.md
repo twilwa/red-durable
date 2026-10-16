@@ -286,3 +286,58 @@ carries forward. The cloud host's Chromium launch restriction described above
 remains; real account consent and provider inference remain untested. The Mac's
 existing development process and live source were left untouched during that
 isolated QA.
+
+## Provider prefix-cache checkpoint — 2026-10-16
+
+The trusted-host bridge now has explicit, conservative cache capabilities for
+ChatGPT public Responses, OpenRouter, and supported OpenCode Zen routes. Go
+remains disabled. See [prompt-caching.md](prompt-caching.md) for exact controls,
+cache-write pricing caveats, isolation, the off switch, and limits.
+
+Verified against this checkpoint:
+
+- **289 automated tests passed: 280 Node tests and nine Vitest release tests.**
+  New tests cover actual pinned provider request serialization, allowed/omitted
+  cache fields and routing headers, tool-round replay, synthetic streamed cache
+  counters, namespace isolation and reconnect, legacy jobs, malformed scopes,
+  failed/corrupt namespace storage, ambient retention suppression, and the off
+  switch. Prompt tests cover Pi section/tool semantics, byte-stable prefixes,
+  Unicode, appends, compaction invalidation, exact originals, and real SQLite
+  close/reopen. Telemetry tests cover legacy rows, bounded numeric allowlists,
+  retention, exact totals, reopen and no prompt/key leakage.
+- Independent review found no blocking correctness or security defects and
+  passed 75 focused/provider-security regressions. Its additional actual Pi
+  Claude Chat Completions serialization case was added to the permanent tests.
+- Both TypeScript checks, full Prettier and `git diff --check` passed. Pinned
+  dependencies remain unchanged. Wrangler dry-run bundling passed at approximately
+  4754 KiB raw / 879 KiB gzip. No deployment occurred.
+- **All 22 real-workerd checkpoints passed.** The new checkpoint verifies actual
+  Pi prompt-section ordering, durable cache scope and synthetic read/write token
+  telemetry. Existing real Pi deferred calls, Code Mode isolation, facets,
+  lifecycle restarts, exact archive continuity, approvals, provider selection and
+  private Discord boundaries still pass. A runtime test-only assertion initially
+  queried telemetry from the wrong owner endpoint; it was corrected to the
+  existing `/api/skills` endpoint, then the entire runtime harness passed.
+
+The stable prompt layout changes only outgoing requests. The stored originals,
+OptMem merge algorithm, charter authority, approved skills/facet activation,
+credential separation, metered acknowledgement and no-fallback policy remain.
+Cache routing identity is distinct from durable job idempotency and leases;
+conversation and background summary identities are separated.
+
+**Not verified live:** provider cache hits, token thresholds, TTL/eviction,
+upstream affinity, real subscription quota savings, billing or latency. All
+provider streams and account records in these tests are synthetic. No sign-in,
+credential import, real inference, paid generation, remote push or production
+change was performed. No browser/UI files changed; optional browser visual QA
+was not rerun for this backend/prompt-only checkpoint.
+
+Reproduce:
+
+```sh
+npm run format:check
+HOME=/tmp/red-prefix-build-home XDG_CONFIG_HOME=/tmp/red-prefix-build-home \
+  WRANGLER_SEND_METRICS=false npm run check
+TEST_LOOPBACK_ONLY=true npm run test:runtime
+git diff --check
+```

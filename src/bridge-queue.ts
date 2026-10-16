@@ -1,3 +1,4 @@
+import type { BridgeCacheScope } from "../shared/bridge.ts";
 import { validBridgeModel } from "../shared/providers.ts";
 import type { AssistantMessage, Context } from "@earendil-works/pi-ai";
 import type { MemorySql } from "./memory";
@@ -5,6 +6,7 @@ export interface InferenceJob {
   id: string;
   modelId: string;
   context: Context;
+  cache?: BridgeCacheScope;
   options: { reasoning?: string; maxTokens?: number };
   leaseToken: string;
   expiresAt: number;
@@ -173,6 +175,26 @@ export class BridgeQueue {
       "CREATE TABLE IF NOT EXISTS red_inference (id TEXT PRIMARY KEY,payload TEXT NOT NULL,state TEXT NOT NULL,lease TEXT,expires INTEGER NOT NULL DEFAULT 0,result TEXT,created INTEGER NOT NULL)",
     );
   }
+  private cacheScope(summary: boolean): BridgeCacheScope {
+    this.sql.exec(
+      "INSERT OR IGNORE INTO red_bridge_config(key,value) VALUES (?,?)",
+      "prompt-cache-namespace-v1",
+      crypto.randomUUID(),
+    );
+    const namespace = String(
+      this.sql
+        .exec(
+          "SELECT value FROM red_bridge_config WHERE key=?",
+          "prompt-cache-namespace-v1",
+        )
+        .toArray()[0].value,
+    );
+    return {
+      version: 1,
+      namespace,
+      purpose: summary ? "summary" : "conversation",
+    };
+  }
   private row(id: string) {
     return this.sql
       .exec("SELECT * FROM red_inference WHERE id=?", id)
@@ -189,6 +211,7 @@ export class BridgeQueue {
       context,
       options,
       summary: Boolean(idempotencyKey),
+      cache: this.cacheScope(Boolean(idempotencyKey)),
     });
     if (new TextEncoder().encode(payload).length > 300000)
       throw new Error("Inference request exceeds300KB");

@@ -53,7 +53,10 @@ export async function runBridge({
       );
       return;
     }
-    manager = createProviderManager({ store });
+    manager = createProviderManager({
+      store,
+      cachePolicy: env.RED_PROMPT_CACHE ?? "auto",
+    });
     if (command === "status") {
       // Only the manager's deliberately non-secret public view may be printed.
       console.log(JSON.stringify(await manager.status(), null, 2));

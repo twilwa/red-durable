@@ -5,6 +5,8 @@ Node bridge. Credentials stay in the bridge's owner-only files, never in the
 Worker/Durable Object, browser storage, model context, telemetry or repository.
 No installation/test performs sign-in, purchases credits or calls a live model.
 
+Stable provider-specific prompt prefixes and isolated cache/session routing are enabled by default. See [prompt-caching.md](prompt-caching.md) for supported routes, cache-write pricing caveats, telemetry and the `RED_PROMPT_CACHE=off` switch. No live cache benefit is claimed.
+
 ## Start alongside the existing development server
 
 Keep the existing `npm run dev` terminal running. In a second terminal, from the

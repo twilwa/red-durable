@@ -36,3 +36,7 @@ relay.env
 # Non-secret OAuth registration bound to the private host.
 openai-registration.json
 .openai-registration*.tmp
+
+# Opaque provider cache identities (private host-local routing metadata).
+prompt-cache.json
+.prompt-cache*.tmp

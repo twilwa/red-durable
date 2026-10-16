@@ -273,14 +273,30 @@ try {
     totalTokens: 0,
     cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
   };
+  let cacheNamespace;
+  const assertCacheJob = (job) => {
+    assert.equal(job.cache.version, 1);
+    assert.match(job.cache.namespace, /^[0-9a-f-]{36}$/);
+    cacheNamespace ??= job.cache.namespace;
+    assert.equal(job.cache.namespace, cacheNamespace);
+    assert.equal(job.cache.purpose, job.summary ? "summary" : "conversation");
+    const sections = Object.keys(job.context.messages[0].sections ?? {});
+    if (job.summary) assert.ok(sections.includes("red_compact"));
+    else {
+      assert.ok(sections.indexOf("red") >= 0);
+      assert.ok(sections.indexOf("red_archive") > sections.indexOf("red"));
+      assert.ok(
+        sections.indexOf("red_volatile") > sections.indexOf("red_archive"),
+      );
+    }
+  };
   let usedTool = false,
     completed = false;
   for (let i = 0; i < 120; i++) {
     const { job } = await bridge("poll", { modelIds: ["gpt-4.1-mini"] });
     if (job) {
-      const isSummary = JSON.stringify(job.context).includes(
-        "Summarize the supplied archive data",
-      );
+      assertCacheJob(job);
+      const isSummary = job.summary === true;
       const tool = !isSummary && !usedTool;
       if (tool) usedTool = true;
       const message = {
@@ -288,7 +304,16 @@ try {
         provider: "openai",
         api: "openai-responses",
         model: job.modelId,
-        usage: zero,
+        usage: tool
+          ? {
+              ...zero,
+              input: 30,
+              output: 5,
+              cacheRead: 60,
+              cacheWrite: 10,
+              totalTokens: 105,
+            }
+          : zero,
         timestamp: Date.now(),
         stopReason: tool ? "toolUse" : "stop",
         content: tool
@@ -327,6 +352,12 @@ try {
   }
   assert.ok(completed, "Mock subscription turn did not complete");
   assert.ok(usedTool);
+  const cacheMetrics = (await api("skills")).telemetry.metrics;
+  assert.equal(cacheMetrics.cacheReadTokens, 60);
+  assert.equal(cacheMetrics.cacheWriteTokens, 10);
+  console.log(
+    "PASS stable prompt sections, durable cache identity and synthetic cache-token telemetry",
+  );
   const historyBefore = (await api("state")).history;
   await api("chat", { id: "bridge-roundtrip", text }, { status: 202 });
   await api(
@@ -549,8 +580,7 @@ try {
     "PASS Discord owner/channel binding, bot/webhook/type and malformed-content rejection",
   );
   const pause = () => new Promise((resolve) => setTimeout(resolve, 250));
-  const isSummary = (job) =>
-    JSON.stringify(job.context).includes("Summarize the supplied archive data");
+  const isSummary = (job) => job.summary === true;
   const respond = (job, reply, tool = false) =>
     bridge("result", {
       jobId: job.id,
@@ -580,6 +610,7 @@ try {
     });
   const pollInference = async () => {
     const { job } = await bridge("poll", { modelIds: ["gpt-4.1-mini"] });
+    if (job) assertCacheJob(job);
     if (job && isSummary(job)) {
       await respond(
         job,

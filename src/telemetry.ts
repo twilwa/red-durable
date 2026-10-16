@@ -23,6 +23,9 @@ export interface TelemetryInput {
   durationMs?: number;
   inputTokens?: number;
   outputTokens?: number;
+  /** Provider-adapter counts only; adapters may default unreported usage to zero. */
+  cacheReadTokens?: number;
+  cacheWriteTokens?: number;
   errorCode?:
     "quota" | "auth" | "timeout" | "invalid" | "unavailable" | "unknown";
 }
@@ -52,6 +55,16 @@ export function safeIdentifier(value: unknown): string {
 function metric(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) && value >= 0
     ? Math.min(Math.floor(value), 1e12)
+    : undefined;
+}
+function cacheTokens(value: unknown): number | undefined {
+  // Reject rather than coerce or clamp reported token counts. This ceiling keeps
+  // retained totals exact even at the maximum capacity of 10,000 events.
+  return typeof value === "number" &&
+    Number.isSafeInteger(value) &&
+    value >= 0 &&
+    value <= 1e9
+    ? value
     : undefined;
 }
 export class TelemetryStore {
@@ -103,6 +116,10 @@ export class TelemetryStore {
       clean.errorCode = input.errorCode;
     for (const key of ["durationMs", "inputTokens", "outputTokens"] as const) {
       const n = metric(input[key]);
+      if (n !== undefined) clean[key] = n;
+    }
+    for (const key of ["cacheReadTokens", "cacheWriteTokens"] as const) {
+      const n = cacheTokens(input[key]);
       if (n !== undefined) clean[key] = n;
     }
     const at = new Date().toISOString();
@@ -179,7 +196,7 @@ export class TelemetryStore {
       .toArray();
     const metrics = this.sql
       .exec(
-        "SELECT COUNT(DISTINCT session_id) AS sessions,COUNT(DISTINCT run_id) AS runs,COALESCE(AVG(json_extract(data,'$.durationMs')),0) AS averageDurationMs,COALESCE(SUM(json_extract(data,'$.inputTokens')),0) AS inputTokens,COALESCE(SUM(json_extract(data,'$.outputTokens')),0) AS outputTokens FROM red_telemetry",
+        "SELECT COUNT(DISTINCT session_id) AS sessions,COUNT(DISTINCT run_id) AS runs,COALESCE(AVG(json_extract(data,'$.durationMs')),0) AS averageDurationMs,COALESCE(SUM(json_extract(data,'$.inputTokens')),0) AS inputTokens,COALESCE(SUM(json_extract(data,'$.outputTokens')),0) AS outputTokens,COALESCE(SUM(json_extract(data,'$.cacheReadTokens')),0) AS cacheReadTokens,COALESCE(SUM(json_extract(data,'$.cacheWriteTokens')),0) AS cacheWriteTokens FROM red_telemetry",
       )
       .toArray()[0];
     return {
@@ -187,7 +204,7 @@ export class TelemetryStore {
       retentionEvents: this.capacity,
       counts: Object.fromEntries(rows.map((r) => [r.kind, Number(r.count)])),
       scope:
-        "Retained events only; no raw messages, tool payloads or private reasoning.",
+        "Retained events only. Cache token totals include only valid counts supplied by the provider adapter; zero or missing counts may mean unreported usage and do not prove a cache hit or miss. No cache-hit rate, billed cost or savings are inferred. No raw messages, prompts, prompt hashes, cache identities, credentials, tool payloads or private reasoning.",
     };
   }
   hasRun(runId: string) {

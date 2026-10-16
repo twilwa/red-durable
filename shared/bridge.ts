@@ -1,11 +1,17 @@
 import type { AssistantMessage, Context } from "@earendil-works/pi-ai";
 export const BRIDGE_MAX_BYTES = 512 * 1024;
+export interface BridgeCacheScope {
+  version: 1;
+  namespace: string;
+  purpose: "conversation" | "summary";
+}
 export interface BridgeJob {
   id: string;
   leaseToken: string;
   expiresAt: number;
   modelId: string;
   context: Context;
+  cache?: BridgeCacheScope;
   options?: {
     maxTokens?: number;
     reasoning?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";

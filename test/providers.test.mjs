@@ -496,7 +496,8 @@ test("exact selected provider handles tool calls, options, deadlines and qualifi
   assert.equal(f.calls[0].model.provider, "openrouter");
   assert.equal(f.calls[0].options.maxTokens, 1000);
   assert.equal(f.calls[0].options.reasoning, "low");
-  assert.equal(f.calls[0].options.sessionId, `red-${HOST}`);
+  assert.match(f.calls[0].options.sessionId, /^red-v1-[0-9a-f]{56}$/);
+  assert.equal(f.calls[0].options.cacheRetention, "none");
   assert.equal(
     f.calls[0].model.compat.openRouterRouting.allow_fallbacks,
     false,
