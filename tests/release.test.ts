@@ -269,3 +269,57 @@ describe("owner-approved promotion and rollback", () => {
     expect(await f.manager.history()).toHaveLength(1);
   });
 });
+
+it("stop while revision lookup is pending never starts a candidate", async () => {
+  const f = fixture();
+  const revision = await f.manager.propose({ source: DEFAULT_BEHAVIOR_SOURCE });
+  const original = f.storage.get.bind(f.storage);
+  let resume!: () => void;
+  f.storage.get = async <T>(key: string): Promise<T | undefined> => {
+    if (key === "release:revision:" + revision.id)
+      await new Promise<void>((r) => (resume = r));
+    return original<T>(key);
+  };
+  const controller = new AbortController();
+  const result = f.manager.validate(revision.id, controller.signal);
+  controller.abort();
+  resume();
+  await expect(result).rejects.toThrow();
+  expect(f.loaded).toHaveLength(0);
+  expect(f.deletes).toHaveLength(0);
+  expect(await original("release:validated:" + revision.id)).toBeUndefined();
+});
+
+it("in-flight stop disposes the candidate and never records validation", async () => {
+  const storage = new MemoryStorage();
+  const names: string[] = [];
+  let entered!: () => void;
+  const ready = new Promise<void>((r) => (entered = r));
+  const manager = new ReleaseManager({
+    storage,
+    loader: {} as WorkerLoader,
+    facets: {
+      get(name: string) {
+        return {
+          fetch: () => {
+            names.push(name);
+            entered();
+            return new Promise<Response>(() => {});
+          },
+        };
+      },
+      delete(name: string) {
+        names.push("deleted:" + name);
+      },
+    } as unknown as DurableObjectFacets,
+  });
+  const revision = await manager.propose({ source: DEFAULT_BEHAVIOR_SOURCE });
+  const controller = new AbortController();
+  const pending = manager.validate(revision.id, controller.signal);
+  await ready;
+  controller.abort();
+  await expect(pending).rejects.toThrow("stopped");
+  expect(names).toHaveLength(2);
+  expect(names[1]).toBe("deleted:" + names[0]);
+  expect(await storage.get("release:validated:" + revision.id)).toBeUndefined();
+});

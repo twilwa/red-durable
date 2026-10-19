@@ -2159,3 +2159,115 @@ test("owner rejection while reading journal evidence locks and clears the journa
   assert.equal(ui.get("workJournal").textContent, "");
   assert.match(ui.get("error").textContent, /Owner access was rejected/);
 });
+
+const bootstrapState = (overrides = {}) => ({
+  version: 2,
+  policyVersion: 1,
+  stopped: false,
+  bootstrapReady: true,
+  blockers: [],
+  reservedAttempts: 0,
+  policy: { revisionId: "a".repeat(64), maxAttempts: 1 },
+  ...overrides,
+});
+test("bootstrap controls reflect exhausted quota and armed state after action finalizers, then disable on lock", async () => {
+  let bootstrap = bootstrapState();
+  const ui = fixture((path) => {
+    if (path === "state") return Response.json(state({ autonomy: bootstrap }));
+    if (path === "autonomy/validate") {
+      bootstrap = bootstrapState({
+        bootstrapReady: false,
+        reservedAttempts: 1,
+        blockers: ["attempt-budget-exhausted"],
+      });
+      return Response.json(bootstrap);
+    }
+  });
+  await connect(ui);
+  assert.equal(ui.get("validateBootstrap").disabled, false);
+  assert.equal(ui.get("startBootstrap").disabled, true);
+  await ui.get("validateBootstrap").onclick!();
+  assert.equal(ui.get("validateBootstrap").disabled, true);
+  assert.equal(ui.get("startBootstrap").disabled, true);
+  ui.run("lock()");
+  for (const id of [
+    "validateBootstrap",
+    "startBootstrap",
+    "stopBootstrap",
+    "configureBootstrap",
+    "loadBootstrapHistory",
+  ])
+    assert.equal(ui.get(id).disabled, true);
+  assert.equal(ui.get("bootstrapStatus").textContent, "");
+});
+test("bootstrap history late response cannot restore private data after lock", async () => {
+  const pending = deferred<Response>();
+  const ui = fixture((path) => {
+    if (path === "state")
+      return Response.json(state({ autonomy: bootstrapState() }));
+    if (path.startsWith("autonomy/history")) return pending.promise;
+  });
+  await connect(ui);
+  const click = ui.get("loadBootstrapHistory").onclick!();
+  ui.run("lock()");
+  pending.resolve(
+    Response.json({ events: ["PRIVATE"], nextAfterVersion: null }),
+  );
+  await click;
+  assert.equal(ui.get("bootstrapHistory").textContent, "");
+});
+
+test("expired and exhausted stopped bootstrap policies cannot be started from the UI", async () => {
+  for (const blocker of ["policy-expired", "attempt-budget-exhausted"]) {
+    const ui = fixture((path) =>
+      path === "state"
+        ? Response.json(
+            state({
+              autonomy: bootstrapState({
+                stopped: true,
+                bootstrapReady: false,
+                blockers: ["owner-stop-latched", blocker],
+              }),
+            }),
+          )
+        : undefined,
+    );
+    await connect(ui);
+    assert.equal(ui.get("startBootstrap").disabled, true);
+    assert.equal(ui.get("validateBootstrap").disabled, true);
+  }
+});
+
+test("bootstrap shows latest failure directly and history traverses beyond twenty events", async () => {
+  const ui = fixture((path) => {
+    if (path === "state")
+      return Response.json(
+        state({
+          autonomy: bootstrapState({
+            attempts: [{ id: "recent-failure", status: "failed" }],
+          }),
+        }),
+      );
+    if (path === "autonomy/history?afterVersion=0")
+      return Response.json({
+        events: Array.from({ length: 20 }, (_, i) => ({ version: i + 1 })),
+        nextAfterVersion: 20,
+      });
+    if (path === "autonomy/history?afterVersion=20")
+      return Response.json({
+        events: [{ version: 21, event: "candidate-failed" }],
+        nextAfterVersion: null,
+      });
+  });
+  await connect(ui);
+  assert.match(ui.get("bootstrapStatus").textContent, /recent-failure: failed/);
+  await ui.get("loadBootstrapHistory").onclick!();
+  assert.equal(ui.get("loadBootstrapHistory").textContent, "Next history page");
+  await ui.get("loadBootstrapHistory").onclick!();
+  assert.equal(ui.calls.at(-1)!.path, "autonomy/history?afterVersion=20");
+  assert.match(ui.get("bootstrapHistory").textContent, /candidate-failed/);
+  assert.equal(
+    ui.get("loadBootstrapHistory").textContent,
+    "Reload bootstrap history",
+  );
+});

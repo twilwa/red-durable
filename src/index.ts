@@ -4,6 +4,7 @@ import {
   requireModelBillingApproval,
 } from "../shared/providers.ts";
 import { Agent } from "agents";
+import { AutonomyStore, AutonomyError, BootstrapRunner } from "./autonomy";
 import { CompanionStore } from "./companion";
 import { TelemetryStore } from "./telemetry";
 import { SkillsStore } from "./skills";
@@ -237,6 +238,8 @@ export class RedAgent extends Agent<Env> {
   inference: BridgeQueue;
   discord: DiscordQueue;
   companion: CompanionStore;
+  autonomy: AutonomyStore;
+  bootstrap: BootstrapRunner;
   telemetry: TelemetryStore;
   skills: SkillsStore;
   memory: DurableMemory;
@@ -265,6 +268,10 @@ export class RedAgent extends Agent<Env> {
       loader: env.LOADER,
       facets: ctx.facets,
     });
+    this.autonomy = new AutonomyStore(ctx.storage.sql);
+    this.bootstrap = new BootstrapRunner(this.autonomy, (id, signal) =>
+      this.releases.validate(id, signal),
+    );
     this.code = createCodemodeRuntime({
       ctx,
       connectors: [
@@ -908,7 +915,9 @@ export class RedAgent extends Agent<Env> {
             error:
               error instanceof Error ? error.message : "Discord request failed",
           },
-          error instanceof DiscordError ? error.status : 400,
+          error instanceof DiscordError || error instanceof AutonomyError
+            ? error.status
+            : 400,
         );
       }
     }
@@ -956,6 +965,44 @@ export class RedAgent extends Agent<Env> {
     if (!(await authorized(request, this.env.OWNER_TOKEN)))
       return json({ error: "Unauthorized" }, 401);
     try {
+      if (request.method === "GET" && path === "/api/autonomy")
+        return json(this.autonomy.status());
+      if (request.method === "GET" && path === "/api/autonomy/history")
+        return json(
+          this.autonomy.history(
+            Number(new URL(request.url).searchParams.get("afterVersion") ?? 0),
+          ),
+        );
+      if (request.method === "POST" && path === "/api/autonomy/stop")
+        return json(this.bootstrap.stop());
+      if (request.method === "POST" && path === "/api/autonomy/configure") {
+        const b = await body(request);
+        if (b.confirm !== "CONFIGURE_BOOTSTRAP")
+          throw new AutonomyError(
+            "Explicit bootstrap configuration confirmation required",
+            400,
+          );
+        // Validate existence without compiling/executing the candidate.
+        await this.releases.get(
+          string((b.policy as Record<string, unknown>)?.revisionId),
+        );
+        return json(this.autonomy.configure(b.policy, b.expectedVersion));
+      }
+      if (request.method === "POST" && path === "/api/autonomy/start") {
+        const b = await body(request);
+        if (b.confirm !== "START_BOOTSTRAP")
+          throw new AutonomyError(
+            "Explicit bootstrap start confirmation required",
+            400,
+          );
+        return json(this.autonomy.start(b.expectedVersion));
+      }
+      if (request.method === "POST" && path === "/api/autonomy/validate") {
+        const b = await body(request);
+        return json(
+          await this.bootstrap.run(b.id, b.revisionId, b.policyVersion),
+        );
+      }
       if (path === "/api/providers" || path.startsWith("/api/providers/")) {
         if (request.method === "GET" && path === "/api/providers")
           return json({
@@ -979,6 +1026,7 @@ export class RedAgent extends Agent<Env> {
           )
           .toArray();
         return json({
+          autonomy: this.autonomy.status(),
           discord: {
             enabled: this.env.DISCORD_ENABLED === "true",
             ...this.discord.status(),
@@ -1218,7 +1266,9 @@ export class RedAgent extends Agent<Env> {
     } catch (error) {
       return json(
         { error: error instanceof Error ? error.message : "Request failed" },
-        error instanceof DiscordError ? error.status : 400,
+        error instanceof DiscordError || error instanceof AutonomyError
+          ? error.status
+          : 400,
       );
     }
   }

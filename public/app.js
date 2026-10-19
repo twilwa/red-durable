@@ -246,6 +246,16 @@ function updateControls() {
     !ui.charterDirty || ui.charterConflict || ui.charterSaving || !ui.companion;
   $("resetCharter").disabled = !ui.charterDirty || ui.charterSaving;
   $("charter").disabled = !ui.companion;
+  if (ui.latest) renderBootstrap(ui.latest);
+  else
+    for (const id of [
+      "stopBootstrap",
+      "configureBootstrap",
+      "startBootstrap",
+      "validateBootstrap",
+      "loadBootstrapHistory",
+    ])
+      $(id).disabled = true;
 }
 function setCharterStatus() {
   ui.charterDirty = $("charter").value !== ui.charterBaseline;
@@ -784,6 +794,42 @@ function cancelProviderSignIn() {
   });
 }
 
+function renderBootstrap(state) {
+  const b = state.autonomy;
+  $("bootstrapStatus").textContent = b
+    ? "Exploration disabled. Bootstrap " +
+      (b.stopped ? "stopped" : "armed") +
+      ". Reserved attempts: " +
+      b.reservedAttempts +
+      "/" +
+      (b.policy?.maxAttempts ?? 0) +
+      ". " +
+      b.blockers.join(", ") +
+      (b.policy ? ". Candidate: " + b.policy.revisionId : "") +
+      (b.attempts?.length
+        ? ". Latest attempt " +
+          b.attempts.at(-1).id +
+          ": " +
+          b.attempts.at(-1).status
+        : ". No validation attempts in this policy.")
+    : "Bootstrap controls unavailable.";
+  for (const id of [
+    "stopBootstrap",
+    "configureBootstrap",
+    "loadBootstrapHistory",
+  ])
+    $(id).disabled = !b || !ui.connected || !!$(id).dataset.busy;
+  $("startBootstrap").disabled =
+    !ui.connected ||
+    !b?.policy ||
+    !b.stopped ||
+    b.blockers.some((blocker) => blocker !== "owner-stop-latched") ||
+    !!$("startBootstrap").dataset.busy;
+  $("validateBootstrap").disabled =
+    !ui.connected ||
+    !b?.bootstrapReady ||
+    !!$("validateBootstrap").dataset.busy;
+}
 function renderConnection(state) {
   const inference = state.inference;
   const recent = inference.lastSeen && Date.now() - inference.lastSeen < 60000;
@@ -1005,6 +1051,7 @@ async function refresh() {
     assertCurrentSession(generation);
     ui.latest = state;
     renderConnection(state);
+    renderBootstrap(state);
     renderHistory(state);
     renderFailures(state);
     renderReleases(state);
@@ -1469,6 +1516,7 @@ function clearPrivateView() {
     "memorySearch",
     "providerKey",
     "providerResponse",
+    "bootstrapRevision",
   ])
     $(id).value = "";
   for (const id of [
@@ -1483,8 +1531,12 @@ function clearPrivateView() {
     "providerFlowStatus",
     "providerPromptLabel",
     "modelBilling",
+    "bootstrapStatus",
+    "bootstrapHistory",
   ])
     $(id).textContent = "";
+  delete $("loadBootstrapHistory").dataset.next;
+  $("loadBootstrapHistory").textContent = "Load bootstrap history";
   $("providerGuide").hidden = true;
   $("sourceEditor").open = false;
   $("memoryDetails").open = false;
@@ -1927,3 +1979,90 @@ window.addEventListener("beforeunload", (event) => {
   }
 });
 updateControls();
+
+// Owner-only experimental controls. Never include these in model connectors.
+$("stopBootstrap").onclick = () =>
+  action(async (checkSession) => {
+    await client.request("autonomy/stop", {});
+    checkSession();
+    await refresh();
+    checkSession();
+    notice("Bootstrap stopped. Other chat and manual work are unaffected.");
+  }, $("stopBootstrap"));
+$("configureBootstrap").onclick = () =>
+  action(async (checkSession) => {
+    const revisionId = $("bootstrapRevision").value.trim();
+    const maxAttempts = Number($("bootstrapAttempts").value);
+    const expectedVersion = ui.latest?.autonomy?.version;
+    if (
+      !confirm(
+        "Configure bootstrap for candidate " +
+          revisionId +
+          " with " +
+          maxAttempts +
+          " attempts for one hour? Disposable network-denied facet only; no inference, external access or promotion. Hosting costs are not metered. Configuration remains stopped.",
+      )
+    )
+      return;
+    await client.request("autonomy/configure", {
+      expectedVersion,
+      confirm: "CONFIGURE_BOOTSTRAP",
+      policy: {
+        revisionId,
+        maxAttempts,
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+        sandbox: "disposable-candidate-v1",
+        paidInferenceBudgetUsd: 0,
+        externalAccess: false,
+      },
+    });
+    checkSession();
+    await refresh();
+  }, $("configureBootstrap"));
+$("startBootstrap").onclick = () =>
+  action(async (checkSession) => {
+    const b = ui.latest?.autonomy;
+    if (
+      !b?.policy ||
+      !confirm(
+        "Allow owner-triggered validation of " +
+          b.policy.revisionId +
+          " under the displayed limits? This does not start self-directed exploration.",
+      )
+    )
+      return;
+    await client.request("autonomy/start", {
+      expectedVersion: b.version,
+      confirm: "START_BOOTSTRAP",
+    });
+    checkSession();
+    await refresh();
+  }, $("startBootstrap"));
+$("validateBootstrap").onclick = () =>
+  action(async (checkSession) => {
+    const b = ui.latest?.autonomy;
+    if (!b?.bootstrapReady) return;
+    await client.request("autonomy/validate", {
+      id: crypto.randomUUID(),
+      revisionId: b.policy.revisionId,
+      policyVersion: b.policyVersion,
+    });
+    checkSession();
+    await refresh();
+  }, $("validateBootstrap"));
+$("loadBootstrapHistory").onclick = () =>
+  action(async (checkSession) => {
+    const cursor = $("loadBootstrapHistory").dataset.next ?? "0";
+    const history = await client.request(
+      "autonomy/history?afterVersion=" + cursor,
+    );
+    checkSession();
+    $("bootstrapHistory").textContent = JSON.stringify(history, null, 2);
+    $("loadBootstrapHistory").dataset.next = String(
+      history.nextAfterVersion ?? 0,
+    );
+    $("loadBootstrapHistory").textContent =
+      history.nextAfterVersion === null
+        ? "Reload bootstrap history"
+        : "Next history page";
+  }, $("loadBootstrapHistory"));

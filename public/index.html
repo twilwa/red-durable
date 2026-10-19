@@ -506,6 +506,64 @@
                 Owner access and provider sign-in are separate. Provider
                 credentials stay on the trusted inference host.
               </p>
+              <section aria-labelledby="bootstrapTitle">
+                <h3 id="bootstrapTitle">Bootstrap experiments</h3>
+                <p class="hint">
+                  Self-directed exploration is not implemented. These controls
+                  only run an owner-selected candidate health validation in a
+                  disposable, network-denied facet. They grant no inference,
+                  external access or automatic promotion. Hosting costs are not
+                  metered here.
+                </p>
+                <p id="bootstrapStatus" role="status"></p>
+                <button id="stopBootstrap" class="secondary" disabled>
+                  Stop bootstrap only
+                </button>
+                <p class="hint">
+                  Stop persists across restarts and cancels bootstrap
+                  validation. It does not stop chat, summaries, Discord or
+                  manual tools.
+                </p>
+                <details>
+                  <summary>Configure a bounded validation</summary>
+                  <label for="bootstrapRevision"
+                    >Exact staged revision ID</label
+                  >
+                  <input
+                    id="bootstrapRevision"
+                    autocomplete="off"
+                    maxlength="64"
+                  />
+                  <label for="bootstrapAttempts"
+                    >Maximum validation attempts (1–20)</label
+                  >
+                  <input
+                    id="bootstrapAttempts"
+                    type="number"
+                    min="1"
+                    max="20"
+                    value="1"
+                  />
+                  <p class="hint">
+                    Fixed sandbox: disposable-candidate-v1. Zero paid inference;
+                    no external access. Configuration expires after one hour.
+                    Failed and interrupted attempts count.
+                  </p>
+                  <button id="configureBootstrap" class="secondary" disabled>
+                    Save stopped configuration
+                  </button>
+                  <button id="startBootstrap" class="secondary" disabled>
+                    Allow bounded bootstrap
+                  </button>
+                  <button id="validateBootstrap" class="secondary" disabled>
+                    Validate candidate once
+                  </button>
+                </details>
+                <button id="loadBootstrapHistory" class="quiet" disabled>
+                  Load bootstrap history
+                </button>
+                <pre id="bootstrapHistory"></pre>
+              </section>
               <div id="connectionDetails"></div>
               <details class="raw">
                 <summary>Runtime details</summary>

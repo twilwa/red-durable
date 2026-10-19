@@ -148,16 +148,24 @@ export class ReleaseManager {
     return worker.getDurableObjectClass("MutableAgent");
   }
 
-  async validate(id: string): Promise<Validation> {
+  async validate(id: string, signal?: AbortSignal): Promise<Validation> {
+    signal?.throwIfAborted();
     const revision = await this.get(id);
+    signal?.throwIfAborted();
     // Unique test database: cannot modify production state or reuse a warm test.
     const name = `candidate:${id}:${crypto.randomUUID()}`;
     let timer: ReturnType<typeof setTimeout> | undefined;
+    let onAbort: (() => void) | undefined;
     try {
       const facet = this.options.facets.get(name, () => ({
         class: this.dynamicClass(revision, "candidate"),
       }));
       await Promise.race([
+        new Promise<never>((_, reject) => {
+          onAbort = () => reject(new Error("Candidate validation stopped"));
+          signal?.addEventListener("abort", onAbort, { once: true });
+          if (signal?.aborted) onAbort();
+        }),
         (async () => {
           const response = await facet.fetch(
             new Request("https://facet.internal/health"),
@@ -214,6 +222,7 @@ export class ReleaseManager {
       return validation;
     } finally {
       if (timer !== undefined) clearTimeout(timer);
+      if (onAbort) signal?.removeEventListener("abort", onAbort);
       // Only the disposable candidate's database is deleted. Never FACET_NAME.
       this.options.facets.delete(name);
     }

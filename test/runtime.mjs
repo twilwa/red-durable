@@ -210,8 +210,100 @@ try {
     JSON.stringify(denied),
   );
   console.log("PASS Code Mode ambient network denied");
+  assert.equal((await api("autonomy")).explorationEnabled, false);
+  assert.equal((await api("autonomy")).stopped, true);
+  assert.equal((await fetch(base + "/api/autonomy")).status, 401);
+  await api(
+    "autonomy/stop",
+    {},
+    { status: 401, headers: { Origin: "https://attacker.invalid" } },
+  );
+  const configureBootstrap = async (revisionId, maxAttempts = 1) => {
+    const current = await api("autonomy");
+    return api("autonomy/configure", {
+      expectedVersion: current.version,
+      confirm: "CONFIGURE_BOOTSTRAP",
+      policy: {
+        revisionId,
+        sandbox: "disposable-candidate-v1",
+        maxAttempts,
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+        paidInferenceBudgetUsd: 0,
+        externalAccess: false,
+      },
+    });
+  };
+  let bootstrap = await configureBootstrap(a.id);
+  assert.equal(bootstrap.stopped, true);
+  await api(
+    "autonomy/start",
+    { expectedVersion: bootstrap.version - 1, confirm: "START_BOOTSTRAP" },
+    { status: 409 },
+  );
+  bootstrap = await api("autonomy/start", {
+    expectedVersion: bootstrap.version,
+    confirm: "START_BOOTSTRAP",
+  });
+  const request = {
+    id: "bootstrap-one",
+    revisionId: a.id,
+    policyVersion: bootstrap.policyVersion,
+  };
+  bootstrap = await api("autonomy/validate", request);
+  assert.equal(bootstrap.attempts[0].status, "passed");
+  assert.equal((await api("autonomy/validate", request)).reservedAttempts, 1);
+  await api(
+    "autonomy/validate",
+    { ...request, id: "bootstrap-two" },
+    { status: 409 },
+  );
+  assert.equal(bootstrap.paidInferenceRequests, 0);
+  assert.equal(bootstrap.externalRequests, 0);
+  const slow = await api("revisions", {
+    source: template.replace(
+      "if (path === '/health') return",
+      "if (path === '/health') await new Promise(resolve => setTimeout(resolve, 4000)); if (path === '/health') return",
+    ),
+    description: "Synthetic slow bootstrap stop fixture",
+  });
+  bootstrap = await configureBootstrap(slow.id, 2);
+  bootstrap = await api("autonomy/start", {
+    expectedVersion: bootstrap.version,
+    confirm: "START_BOOTSTRAP",
+  });
+  const slowRun = api("autonomy/validate", {
+    id: "slow-bootstrap",
+    revisionId: slow.id,
+    policyVersion: bootstrap.policyVersion,
+  });
+  for (let i = 0; i < 100; i++) {
+    if ((await api("autonomy")).attempts.some((a) => a.status === "running"))
+      break;
+    await new Promise((r) => setTimeout(r, 20));
+  }
+  assert.equal((await api("autonomy")).attempts[0].status, "running");
+  const stopped = await api("autonomy/stop", {});
+  assert.equal(stopped.stopped, true);
+  assert.equal((await slowRun).attempts[0].status, "stopped");
+  assert.equal((await api("autonomy/stop", {})).version, stopped.version);
+  assert.equal((await api("state")).active.revisionId, a.id);
+  assert.equal(
+    (await api("autonomy/history")).events.some(
+      (e) => e.event === "owner-stopped-bootstrap",
+    ),
+    true,
+  );
+  console.log(
+    "PASS owner-only bounded bootstrap, exact quota, idempotency and in-flight facet stop; no inference or promotion",
+  );
   await stop();
   await start();
+  assert.equal((await api("autonomy")).stopped, true);
+  assert.equal((await api("autonomy")).attempts[0].status, "stopped");
+  assert.equal((await api("autonomy")).explorationRunning, false);
+  console.log(
+    "PASS bootstrap policy, stop latch and attempt history survive real runtime restart",
+  );
   assert.equal((await api("state")).active.revisionId, a.id);
   assert.equal(
     (await api("behavior", { name: "counter_get", args: {} })).value,
@@ -229,6 +321,16 @@ try {
     status: 401,
     headers: { Authorization: `Bearer ${bridgeToken}` },
   });
+  await api(
+    "autonomy/stop",
+    {},
+    { status: 401, headers: { Authorization: `Bearer ${bridgeToken}` } },
+  );
+  await api(
+    "autonomy/configure",
+    {},
+    { status: 401, headers: { Authorization: `Bearer ${bridgeToken}` } },
+  );
   await api("bridge/poll", { modelIds: ["gpt-4.1-mini"] }, { status: 401 });
   await bridge("poll", {
     modelIds: ["gpt-4.1-mini", "openrouter::fixture/model"],
