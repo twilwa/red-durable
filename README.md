@@ -51,6 +51,8 @@ adaptation boundary, interaction guarantees and remaining limitations.
 - **Provider-specific prefix caching:** deterministic instruction/archive prefixes, isolated conversation/summary routing keys, native short-lived Claude breakpoints and truthful cache-token telemetry. Hits, retention and billing remain provider/model-dependent; see [prompt-caching.md](docs/prompt-caching.md).
 - **Explicit provider choice:** ChatGPT remains the default, with owner-opted-in OpenRouter and OpenCode Zen keys on the trusted host. Metered model selection requires an explicit acknowledgement. Missing sign-in, quota problems, and offline inference never trigger provider fallback.
 
+- **Bounded agent-owned experiments:** owner-armed, disabled-by-default isolated source proposal/test loops with durable dispatch/tool budgets and scoped stop. No automatic activation; see [experiment sessions](docs/experiment-sessions.md).
+
 ### The self-update boundary
 
 The mutable facet contains executable custom tools and behavior instructions. It has its own database, no ambient network, and no account credentials. The supervisor keeps authentication, Pi, memory, release controls and recovery outside that mutable code.

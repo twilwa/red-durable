@@ -2271,3 +2271,173 @@ test("bootstrap shows latest failure directly and history traverses beyond twent
     "Reload bootstrap history",
   );
 });
+
+const experimentState = (overrides = {}) => ({
+  version: 3,
+  policyVersion: 1,
+  sessionId: null,
+  epoch: 1,
+  state: "configured",
+  running: false,
+  stopped: true,
+  policy: {
+    goal: "Synthetic candidate goal",
+    startingRevisionId: "a".repeat(64),
+    expiresAt: new Date(Date.now() + 3600000).toISOString(),
+    maxGenerations: 6,
+    maxOutputTokens: 24576,
+    maxProposals: 1,
+    maxTests: 1,
+    modelId: "fixture-model",
+    sandbox: "disposable-candidate-v1",
+    paidInferenceBudgetUsd: 0,
+    externalAccess: false,
+  },
+  reserved: { generations: 0, outputTokens: 0, proposals: 0, tests: 0 },
+  reason: null,
+  event: "owner-configured-experiment",
+  ...overrides,
+});
+test("experiments remain unavailable without state and cannot configure using paid models", async () => {
+  for (const extras of [
+    {},
+    {
+      experiments: experimentState(),
+      inference: {
+        ...state().inference,
+        mode: "metered-bridge",
+        selected: "openrouter::fixture",
+        models: ["openrouter::fixture"],
+      },
+    },
+  ]) {
+    const ui = fixture((path) =>
+      path === "state" ? Response.json(state(extras)) : undefined,
+    );
+    await connect(ui);
+    assert.equal(ui.get("configureExperiment").disabled, true);
+    assert.equal(ui.get("startExperiment").disabled, true);
+  }
+});
+test("experiment configuration sends explicit bounded subscription policy and start is separately confirmed", async () => {
+  const ui = fixture((path) =>
+    path === "state"
+      ? Response.json(state({ experiments: experimentState() }))
+      : undefined,
+  );
+  await connect(ui);
+  ui.get("experimentGoal").value = "Synthetic candidate goal";
+  ui.get("bootstrapRevision").value = "a".repeat(64);
+  ui.allowConfirmation(false);
+  await ui.get("configureExperiment").onclick!();
+  assert.equal(
+    ui.calls.filter((c) => c.path === "experiments/configure").length,
+    0,
+  );
+  ui.allowConfirmation(true);
+  await ui.get("configureExperiment").onclick!();
+  const request = ui.calls.find((c) => c.path === "experiments/configure")!;
+  assert.equal(request.body.confirmation, "CONFIGURE_EXPERIMENT");
+  assert.equal(request.body.expectedVersion, 3);
+  assert.equal(request.body.policy.modelId, "fixture-model");
+  assert.equal(request.body.policy.maxGenerations, 6);
+  assert.equal(request.body.policy.maxOutputTokens, 24576);
+  assert.equal(request.body.policy.paidInferenceBudgetUsd, 0);
+  assert.equal(request.body.policy.externalAccess, false);
+  assert.match(ui.confirmations.at(-1)!, /planning only/);
+  assert.match(ui.confirmations.at(-1)!, /actual output may exceed/);
+  assert.equal(
+    ui.calls.some((c) => c.path === "experiments/start"),
+    false,
+  );
+  await ui.get("startExperiment").onclick!();
+  assert.equal(
+    ui.calls.find((c) => c.path === "experiments/start")!.body.confirmation,
+    "START_EXPERIMENT",
+  );
+  assert.match(ui.confirmations.at(-1)!, /not an enforced provider cap/);
+  assert.equal(
+    ui.calls.some(
+      (c) => c.path.startsWith("autonomy/") || c.path.includes("activate"),
+    ),
+    false,
+  );
+});
+test("experiment stop is immediate and remains available without a subscription model", async () => {
+  const ui = fixture((path) =>
+    path === "state"
+      ? Response.json(
+          state({
+            experiments: experimentState({
+              running: true,
+              stopped: false,
+              state: "active",
+            }),
+            inference: {
+              ...state().inference,
+              models: [],
+              selected: undefined,
+            },
+          }),
+        )
+      : undefined,
+  );
+  await connect(ui);
+  assert.equal(ui.get("stopExperiment").disabled, false);
+  const confirmations = ui.confirmations.length;
+  await ui.get("stopExperiment").onclick!();
+  assert.equal(ui.confirmations.length, confirmations);
+  assert.deepEqual(
+    ui.calls.find((c) => c.path === "experiments/stop")!.body,
+    {},
+  );
+  assert.equal(
+    ui.calls.some((c) => c.path === "autonomy/stop" || c.path === "abort"),
+    false,
+  );
+});
+test("experiment expiration and exhausted generation budget disable start", async () => {
+  for (const e of [
+    experimentState({
+      policy: {
+        ...experimentState().policy,
+        expiresAt: "2000-01-01T00:00:00Z",
+      },
+    }),
+    experimentState({
+      reserved: { generations: 6, outputTokens: 0, proposals: 0, tests: 0 },
+    }),
+  ]) {
+    const ui = fixture((path) =>
+      path === "state" ? Response.json(state({ experiments: e })) : undefined,
+    );
+    await connect(ui);
+    assert.equal(ui.get("startExperiment").disabled, true);
+  }
+});
+test("locking clears experiment policy, draft, report, and fences late report responses", async () => {
+  const pending = deferred<Response>();
+  const ui = fixture((path) =>
+    path === "state"
+      ? Response.json(state({ experiments: experimentState() }))
+      : path === "experiments/report"
+        ? pending.promise
+        : undefined,
+  );
+  await connect(ui);
+  ui.get("experimentGoal").value = "PRIVATE";
+  const click = ui.get("loadExperimentReport").onclick!();
+  ui.run("lock()");
+  pending.resolve(Response.json({ transcript: "PRIVATE" }));
+  await click;
+  for (const id of ["experimentPolicy", "experimentStatus", "experimentReport"])
+    assert.equal(ui.get(id).textContent, "");
+  assert.equal(ui.get("experimentGoal").value, "");
+  for (const id of [
+    "configureExperiment",
+    "startExperiment",
+    "stopExperiment",
+    "loadExperimentReport",
+  ])
+    assert.equal(ui.get(id).disabled, true);
+});

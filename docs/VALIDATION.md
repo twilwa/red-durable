@@ -404,3 +404,29 @@ Browser visual QA was attempted but could not launch Chromium because this host
 denied its process-singleton socket. The supported escalation also failed before
 execution. Browser test scenarios are included, but no visual-pass claim is made.
 No account sign-in, real inference or deployment was performed.
+
+## Agent-owned bounded experiment sessions — 2026-10-19
+
+The disabled-by-default experiment controller is separate from manual bootstrap
+and owner chat. A single explicit start can run source reading, proposal,
+disposable candidate validation and reporting within a fixed policy. This is a
+restricted source experimentation loop, not general autonomous exploration.
+
+Verification used synthetic model replies only: real SQLite reservation/reopen
+and controller tests, queue dispatch/lease/cancellation tests, owner UI state
+regressions, guarded release/evidence-only tests, full TypeScript/format checks,
+and Wrangler dry-run bundle. The full real-workerd suite passed with new
+three-generation proposal/test/report, no owner-history attribution or activation
+eligibility, credential isolation, stop/late-result rejection and process-restart
+interruption. Existing chat/provider/cache/Discord regressions passed.
+
+Every Durable Object reconstruction, including eviction while awaiting inference,
+interrupts an armed experiment. It never automatically resumes an uncertain run.
+This conservative prototype therefore does not promise unattended continuity
+through eviction. Reservations remain spent; owner start can use only remaining
+configured budget. Source proposals already staged remain reviewable.
+
+Requested output tokens are planning reservations, not a provider-enforced cap.
+Reported output exceeding that allowance halts future work; already spent tokens
+are not reversed. No live provider/account access, automatic activation, deployment
+or browser visual pass was performed or claimed.

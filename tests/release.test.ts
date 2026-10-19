@@ -323,3 +323,105 @@ it("in-flight stop disposes the candidate and never records validation", async (
   expect(names[1]).toBe("deleted:" + names[0]);
   expect(await storage.get("release:validated:" + revision.id)).toBeUndefined();
 });
+
+describe("experiment capability fences", () => {
+  it("does not grant promotion eligibility for evidence-only validation", async () => {
+    const f = fixture();
+    const revision = await f.manager.propose({
+      source: DEFAULT_BEHAVIOR_SOURCE,
+    });
+    const result = await f.manager.validate(revision.id, undefined, {
+      evidenceOnly: true,
+    });
+    expect(result.revisionId).toBe(revision.id);
+    expect(f.deletes).toHaveLength(1);
+    expect(
+      await f.storage.get("release:validated:" + revision.id),
+    ).toBeUndefined();
+    await expect(
+      f.manager.activate({
+        revisionId: revision.id,
+        expectedActiveRevisionId: null,
+        ownerApproved: true,
+      }),
+    ).rejects.toThrow("Validate");
+    // An explicit normal validation retains the existing owner workflow.
+    await f.manager.validate(revision.id);
+    expect(
+      await f.storage.get("release:validated:" + revision.id),
+    ).toBeDefined();
+  });
+
+  it("checks revocation after hashing and before staging", async () => {
+    const f = fixture();
+    let allowed = true;
+    const pending = f.manager.propose(
+      { source: DEFAULT_BEHAVIOR_SOURCE },
+      () => {
+        if (!allowed) throw new Error("revoked");
+      },
+    );
+    allowed = false;
+    await expect(pending).rejects.toThrow("revoked");
+    expect(await f.manager.list()).toEqual([]);
+  });
+
+  it("checks revocation inside the proposal transaction after lookup", async () => {
+    const f = fixture();
+    const original = f.storage.get.bind(f.storage);
+    let allowed = true;
+    f.storage.get = async <T>(key: string): Promise<T | undefined> => {
+      const result = await original<T>(key);
+      allowed = false;
+      return result;
+    };
+    await expect(
+      f.manager.propose({ source: DEFAULT_BEHAVIOR_SOURCE }, () => {
+        if (!allowed) throw new Error("revoked");
+      }),
+    ).rejects.toThrow("revoked");
+    expect(await f.manager.list()).toEqual([]);
+  });
+
+  it("fences validation completion before recording eligibility", async () => {
+    const f = fixture();
+    const revision = await f.manager.propose({
+      source: DEFAULT_BEHAVIOR_SOURCE,
+    });
+    await expect(
+      f.manager.validate(revision.id, undefined, {
+        guard: () => {
+          if (f.loaded.length) throw new Error("revoked");
+        },
+      }),
+    ).rejects.toThrow("revoked");
+    expect(f.loaded).toHaveLength(1);
+    expect(f.deletes).toHaveLength(1);
+    expect(
+      await f.storage.get("release:validated:" + revision.id),
+    ).toBeUndefined();
+  });
+
+  it("checks guard again after revision lookup before starting a candidate", async () => {
+    const f = fixture();
+    const revision = await f.manager.propose({
+      source: DEFAULT_BEHAVIOR_SOURCE,
+    });
+    const original = f.storage.get.bind(f.storage);
+    let allowed = true;
+    f.storage.get = async <T>(key: string): Promise<T | undefined> => {
+      const result = await original<T>(key);
+      allowed = false;
+      return result;
+    };
+    await expect(
+      f.manager.validate(revision.id, undefined, {
+        guard: () => {
+          if (!allowed) throw new Error("revoked");
+        },
+      }),
+    ).rejects.toThrow("revoked");
+    expect(f.loaded).toHaveLength(0);
+    expect(f.deletes).toHaveLength(0);
+  });
+});

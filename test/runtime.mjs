@@ -365,6 +365,219 @@ try {
   console.log(
     "PASS provider credential isolation, explicit metered selection and coding-only exclusion",
   );
+  // Synthetic model fixtures exercise the real isolated experiment controller,
+  // candidate facet and durable budget. They do not establish model quality.
+  const experimentMarker = "SYNTHETIC_EXPERIMENT_PRIVATE_MARKER";
+  assert.equal((await api("experiments")).state, "disabled");
+  for (const endpoint of ["start", "stop", "configure"])
+    await api(
+      "experiments/" + endpoint,
+      {},
+      {
+        status: 401,
+        headers: { Authorization: `Bearer ${bridgeToken}` },
+      },
+    );
+  const configureExperiment = async () => {
+    const current = await api("experiments");
+    return api("experiments/configure", {
+      expectedVersion: current.version,
+      confirmation: "CONFIGURE_EXPERIMENT",
+      policy: {
+        goal:
+          experimentMarker +
+          ": propose a harmless source comment and contract-test it",
+        startingRevisionId: a.id,
+        expiresAt: new Date(Date.now() + 3600000).toISOString(),
+        maxGenerations: 3,
+        maxOutputTokens: 12288,
+        maxProposals: 1,
+        maxTests: 1,
+        modelId: "gpt-4.1-mini",
+        sandbox: "disposable-candidate-v1",
+        paidInferenceBudgetUsd: 0,
+        externalAccess: false,
+      },
+    });
+  };
+  const beginExperiment = async () => {
+    const configured = await configureExperiment();
+    return api("experiments/start", {
+      expectedVersion: configured.version,
+      confirmation: "START_EXPERIMENT",
+    });
+  };
+  const pollExperiment = async () => {
+    for (let i = 0; i < 60; i++) {
+      const { job } = await bridge("poll", { modelIds: ["gpt-4.1-mini"] });
+      if (job) {
+        assert.equal(job.scope?.purpose, "experiment");
+        assert.ok(job.options.maxTokens <= 4096);
+        assert.deepEqual(job.context.tools.map((t) => t.name).sort(), [
+          "propose",
+          "read",
+          "report",
+          "starter",
+          "validate",
+        ]);
+        return job;
+      }
+      await new Promise((r) => setTimeout(r, 100));
+    }
+    throw new Error(
+      "Experiment inference was not enqueued: " +
+        JSON.stringify(await api("experiments/report")),
+    );
+  };
+  const experimentMessage = (job, name, args) => ({
+    role: "assistant",
+    provider: "openai",
+    api: "openai-responses",
+    model: job.modelId,
+    usage: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      totalTokens: 0,
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    },
+    timestamp: Date.now(),
+    stopReason: "toolUse",
+    content: [
+      {
+        type: "toolCall",
+        id: "experiment-fixture-" + name,
+        name,
+        arguments: args,
+      },
+    ],
+  });
+  const answerExperiment = (job, name, args) =>
+    bridge("result", {
+      jobId: job.id,
+      leaseToken: job.leaseToken,
+      message: experimentMessage(job, name, args),
+    });
+  const ownerHistoryBeforeExperiment = (await api("state")).history;
+  const startedExperiment = await beginExperiment();
+  const proposalJob = await pollExperiment();
+  assert.equal(proposalJob.scope.sessionId, startedExperiment.sessionId);
+  await answerExperiment(proposalJob, "propose", {
+    source: template + "\n// " + experimentMarker + "\n",
+    description: "Synthetic isolated experiment proposal",
+  });
+  const validationJob = await pollExperiment();
+  const proposalResult = validationJob.context.messages.find(
+    (m) => m.role === "toolResult" && m.toolName === "propose",
+  );
+  assert.ok(proposalResult, JSON.stringify(validationJob.context.messages));
+  const proposedRevision = JSON.parse(
+    proposalResult.content[0].text,
+  ).revisionId;
+  assert.match(proposedRevision, /^[a-f0-9]{64}$/);
+  await answerExperiment(validationJob, "validate", { id: proposedRevision });
+  const reportJob = await pollExperiment();
+  const validationResult = reportJob.context.messages.find(
+    (m) => m.role === "toolResult" && m.toolName === "validate",
+  );
+  assert.equal(
+    JSON.parse(validationResult.content[0].text).revisionId,
+    proposedRevision,
+  );
+  await answerExperiment(reportJob, "report", {
+    text:
+      experimentMarker +
+      ": contract smoke passed; no activation or model-quality claim.",
+  });
+  let experimentReport;
+  for (let i = 0; i < 60; i++) {
+    assert.equal(
+      (await bridge("poll", { modelIds: ["gpt-4.1-mini"] })).job,
+      null,
+    );
+    experimentReport = await api("experiments/report");
+    if (!experimentReport.status.running) break;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  assert.equal(
+    experimentReport.status.state,
+    "completed",
+    JSON.stringify(experimentReport),
+  );
+  assert.deepEqual(experimentReport.status.reserved, {
+    generations: 3,
+    outputTokens: 12288,
+    proposals: 1,
+    tests: 1,
+  });
+  assert.ok(experimentReport.report.includes(experimentMarker));
+  assert.equal((await api("state")).active.revisionId, a.id);
+  assert.deepEqual((await api("state")).history, ownerHistoryBeforeExperiment);
+  assert.ok(
+    !JSON.stringify((await api("state")).history).includes(experimentMarker),
+  );
+  // Experiment-only contract evidence cannot authorize owner activation.
+  await api(
+    "activate",
+    {
+      id: proposedRevision,
+      expectedActiveRevisionId: a.id,
+      confirm: "ACTIVATE",
+    },
+    { status: 400 },
+  );
+  console.log(
+    "PASS isolated three-generation propose/test/report experiment, exact quotas, owner evidence isolation and no promotion eligibility (synthetic inference)",
+  );
+  await beginExperiment();
+  const stoppedExperimentJob = await pollExperiment();
+  assert.equal((await api("experiments/stop", {})).state, "stopped");
+  await api(
+    "bridge/result",
+    {
+      jobId: stoppedExperimentJob.id,
+      leaseToken: stoppedExperimentJob.leaseToken,
+      message: experimentMessage(stoppedExperimentJob, "report", {
+        text: "Late forbidden result",
+      }),
+    },
+    { status: 409, headers: { Authorization: `Bearer ${bridgeToken}` } },
+  );
+  assert.equal(
+    (await bridge("poll", { modelIds: ["gpt-4.1-mini"] })).job,
+    null,
+  );
+  assert.equal((await api("experiments")).reserved.generations, 1);
+  await beginExperiment();
+  const interruptedExperimentJob = await pollExperiment();
+  await stop();
+  await start();
+  const interruptedExperiment = await api("experiments");
+  assert.equal(interruptedExperiment.state, "interrupted");
+  assert.equal(interruptedExperiment.running, false);
+  assert.equal(interruptedExperiment.reserved.generations, 1);
+  assert.equal(interruptedExperiment.reservations[0].status, "interrupted");
+  assert.equal(
+    (await bridge("poll", { modelIds: ["gpt-4.1-mini"] })).job,
+    null,
+  );
+  await api(
+    "bridge/result",
+    {
+      jobId: interruptedExperimentJob.id,
+      leaseToken: interruptedExperimentJob.leaseToken,
+      message: experimentMessage(interruptedExperimentJob, "report", {
+        text: "Forbidden restart replay",
+      }),
+    },
+    { status: 409, headers: { Authorization: `Bearer ${bridgeToken}` } },
+  );
+  assert.equal((await api("state")).active.revisionId, a.id);
+  assert.deepEqual((await api("state")).history, ownerHistoryBeforeExperiment);
+  console.log(
+    "PASS experiment stop and real runtime restart cancel leased inference, reject late results, preserve reservations and never auto-resume",
+  );
   const text =
     "Remember our lighthouse project. Inspect your source revisions before answering.";
   await api("chat", { id: "bridge-roundtrip", text }, { status: 202 });

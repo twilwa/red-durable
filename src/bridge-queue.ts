@@ -1,5 +1,8 @@
-import type { BridgeCacheScope } from "../shared/bridge.ts";
-import { validBridgeModel } from "../shared/providers.ts";
+import type {
+  BridgeCacheScope,
+  BridgeExperimentScope,
+} from "../shared/bridge.ts";
+import { isMeteredModel, validBridgeModel } from "../shared/providers.ts";
 import type { AssistantMessage, Context } from "@earendil-works/pi-ai";
 import type { MemorySql } from "./memory";
 export interface InferenceJob {
@@ -7,6 +10,7 @@ export interface InferenceJob {
   modelId: string;
   context: Context;
   cache?: BridgeCacheScope;
+  scope?: BridgeExperimentScope;
   options: { reasoning?: string; maxTokens?: number };
   leaseToken: string;
   expiresAt: number;
@@ -175,18 +179,22 @@ export class BridgeQueue {
       "CREATE TABLE IF NOT EXISTS red_inference (id TEXT PRIMARY KEY,payload TEXT NOT NULL,state TEXT NOT NULL,lease TEXT,expires INTEGER NOT NULL DEFAULT 0,result TEXT,created INTEGER NOT NULL)",
     );
   }
-  private cacheScope(summary: boolean): BridgeCacheScope {
+  private cacheScope(
+    summary: boolean,
+    scope?: BridgeExperimentScope,
+  ): BridgeCacheScope {
+    // Persist UUID namespaces to remain compatible with trusted-host validation.
+    const key = scope
+      ? `prompt-cache-experiment-v1:${JSON.stringify([scope.sessionId, scope.epoch])}`
+      : "prompt-cache-namespace-v1";
     this.sql.exec(
       "INSERT OR IGNORE INTO red_bridge_config(key,value) VALUES (?,?)",
-      "prompt-cache-namespace-v1",
+      key,
       crypto.randomUUID(),
     );
     const namespace = String(
       this.sql
-        .exec(
-          "SELECT value FROM red_bridge_config WHERE key=?",
-          "prompt-cache-namespace-v1",
-        )
+        .exec("SELECT value FROM red_bridge_config WHERE key=?", key)
         .toArray()[0].value,
     );
     return {
@@ -205,20 +213,50 @@ export class BridgeQueue {
     context: Context,
     options: { reasoning?: string; maxTokens?: number } = {},
     idempotencyKey?: string,
+    scope?: BridgeExperimentScope,
   ) {
+    if (scope) {
+      if (scope.purpose !== "experiment")
+        throw new Error("Invalid inference purpose");
+      boundedString(scope.sessionId, "experiment session ID");
+      boundedString(scope.operationId, "experiment operation ID");
+      number(scope.epoch, "experiment epoch", true);
+      if (!validBridgeModel(modelId) || isMeteredModel(modelId))
+        throw new Error("Experiments require a subscription model");
+      if (
+        context.tools?.some(
+          (tool) =>
+            !["starter", "read", "propose", "validate", "report"].includes(
+              tool.name,
+            ),
+        )
+      )
+        throw new Error(
+          "Experiment inference only permits restricted session tools",
+        );
+    }
+    const summary = !scope && Boolean(idempotencyKey);
     const payload = JSON.stringify({
       modelId,
       context,
       options,
-      summary: Boolean(idempotencyKey),
-      cache: this.cacheScope(Boolean(idempotencyKey)),
+      summary,
+      ...(scope ? { scope } : {}),
+      cache: this.cacheScope(summary, scope),
     });
     if (new TextEncoder().encode(payload).length > 300000)
       throw new Error("Inference request exceeds300KB");
     const stable = JSON.stringify(
-      idempotencyKey
-        ? { modelId, idempotencyKey }
-        : { modelId, context, options },
+      scope
+        ? {
+            purpose: scope.purpose,
+            sessionId: scope.sessionId,
+            epoch: scope.epoch,
+            operationId: scope.operationId,
+          }
+        : idempotencyKey
+          ? { modelId, idempotencyKey }
+          : { modelId, context, options },
       (key, value) => (key === "timestamp" ? undefined : value),
     );
     const digest = await crypto.subtle.digest(
@@ -228,6 +266,16 @@ export class BridgeQueue {
     const id = Array.from(new Uint8Array(digest), (x) =>
       x.toString(16).padStart(2, "0"),
     ).join("");
+    const existing = scope ? this.row(id) : undefined;
+    if (existing) {
+      const withoutTimestamps = (encoded: string) =>
+        JSON.stringify(JSON.parse(encoded), (key, value) =>
+          key === "timestamp" ? undefined : value,
+        );
+      if (withoutTimestamps(existing.payload) !== withoutTimestamps(payload))
+        throw new Error("Experiment operation payload is immutable");
+      return id;
+    }
     const alias = this.sql
       .exec("SELECT current FROM red_inference_alias WHERE canonical=?", id)
       .toArray()[0];
@@ -241,24 +289,52 @@ export class BridgeQueue {
     );
     return id;
   }
-  poll(now = Date.now()): InferenceJob | null {
-    const row = this.sql
-      .exec(
-        "SELECT * FROM red_inference WHERE state='queued' OR (state='leased' AND expires<?) ORDER BY created LIMIT 1",
-        now,
-      )
-      .toArray()[0] as Row | undefined;
-    if (!row) return null;
-    const leaseToken = crypto.randomUUID(),
-      expiresAt = now + 180000;
+  poll(
+    now = Date.now(),
+    allowExperiment?: (scope: BridgeExperimentScope) => boolean,
+  ): InferenceJob | null {
+    // A reservation permits one dispatch, including when a host dies mid-call.
     this.sql.exec(
-      "UPDATE red_inference SET state='leased',lease=?,expires=? WHERE id=?",
-      leaseToken,
-      expiresAt,
-      row.id,
+      "UPDATE red_inference SET state='done',result=? WHERE state='leased' AND expires<? AND json_extract(payload,'$.scope.purpose')='experiment'",
+      JSON.stringify({
+        error: { kind: "invalid", message: bridgeErrorMessages.invalid },
+      }),
+      now,
     );
-    return { ...JSON.parse(row.payload), id: row.id, leaseToken, expiresAt };
+    while (true) {
+      const row = this.sql
+        .exec(
+          "SELECT * FROM red_inference WHERE state='queued' OR (state='leased' AND expires<?) ORDER BY created LIMIT 1",
+          now,
+        )
+        .toArray()[0] as Row | undefined;
+      if (!row) return null;
+      const payload = JSON.parse(row.payload);
+      if (payload.scope?.purpose === "experiment") {
+        let allowed = false;
+        try {
+          allowed = allowExperiment?.(payload.scope) === true;
+        } catch {
+          // Missing, stale, terminal, or expired sessions fail closed.
+        }
+        if (!allowed) {
+          this.cancel(row.id);
+          continue;
+        }
+      }
+      // No await between session authorization and durable lease creation.
+      const leaseToken = crypto.randomUUID(),
+        expiresAt = now + 180000;
+      this.sql.exec(
+        "UPDATE red_inference SET state='leased',lease=?,expires=? WHERE id=?",
+        leaseToken,
+        expiresAt,
+        row.id,
+      );
+      return { ...payload, id: row.id, leaseToken, expiresAt };
+    }
   }
+
   finish(value: BridgeResult, now = Date.now()) {
     record(value, "bridge result");
     boundedString(value.jobId, "job ID", 128);
@@ -338,6 +414,12 @@ export class BridgeQueue {
     return { state: row.state, ...(row.result ? JSON.parse(row.result) : {}) };
   }
   retrySummary(id: string) {
+    const original = this.row(id);
+    if (
+      original &&
+      JSON.parse(original.payload).scope?.purpose === "experiment"
+    )
+      throw new Error("Experiment retries require a new reserved operation");
     const previous = this.sql
       .exec("SELECT current FROM red_inference_alias WHERE canonical=?", id)
       .toArray()[0];
@@ -383,8 +465,20 @@ export class BridgeQueue {
       .map((r) => ({
         id: r.id,
         summary: Boolean(JSON.parse(String(r.payload)).summary),
+        ...(JSON.parse(String(r.payload)).scope?.purpose === "experiment"
+          ? { purpose: "experiment" as const }
+          : {}),
         error: JSON.parse(String(r.result)).error,
       }));
+  }
+  cancelExperiment(sessionId: string, epoch: number) {
+    boundedString(sessionId, "experiment session ID");
+    number(epoch, "experiment epoch", true);
+    this.sql.exec(
+      "UPDATE red_inference SET state='cancelled' WHERE state IN ('queued','leased') AND json_extract(payload,'$.scope.purpose')='experiment' AND json_extract(payload,'$.scope.sessionId')=? AND json_extract(payload,'$.scope.epoch')=?",
+      sessionId,
+      epoch,
+    );
   }
   cancel(id: string) {
     this.sql.exec(

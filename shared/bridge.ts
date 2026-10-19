@@ -5,6 +5,13 @@ export interface BridgeCacheScope {
   namespace: string;
   purpose: "conversation" | "summary";
 }
+/** Budget reservations supply one operation ID per experiment attempt. */
+export interface BridgeExperimentScope {
+  purpose: "experiment";
+  sessionId: string;
+  epoch: number;
+  operationId: string;
+}
 export interface BridgeJob {
   id: string;
   leaseToken: string;
@@ -12,6 +19,7 @@ export interface BridgeJob {
   modelId: string;
   context: Context;
   cache?: BridgeCacheScope;
+  scope?: BridgeExperimentScope;
   options?: {
     maxTokens?: number;
     reasoning?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";

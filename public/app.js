@@ -246,6 +246,7 @@ function updateControls() {
     !ui.charterDirty || ui.charterConflict || ui.charterSaving || !ui.companion;
   $("resetCharter").disabled = !ui.charterDirty || ui.charterSaving;
   $("charter").disabled = !ui.companion;
+  renderExperiments(ui.latest);
   if (ui.latest) renderBootstrap(ui.latest);
   else
     for (const id of [
@@ -792,6 +793,70 @@ function cancelProviderSignIn() {
     check();
     notice("Sign-in cancelled.");
   });
+}
+
+function subscriptionExperimentModel(state) {
+  const inference = state?.inference;
+  const id = inference?.selected;
+  return inference?.mode === "subscription" &&
+    id &&
+    !id.includes("::") &&
+    inference.models.includes(id)
+    ? id
+    : null;
+}
+function renderExperiments(state) {
+  const e = state?.experiments;
+  const policy = e?.policy;
+  if (state) {
+    $("experimentStatus").textContent = e
+      ? "Experiment " +
+        e.state +
+        (e.stopped ? " · stopped" : "") +
+        (e.running ? " · running" : "") +
+        ". " +
+        (e.reason || "") +
+        (e.event ? " Latest event: " + e.event : "")
+      : "Experiment controls unavailable.";
+    $("experimentPolicy").textContent = e
+      ? JSON.stringify(
+          {
+            sessionId: e.sessionId,
+            epoch: e.epoch,
+            version: e.version,
+            policyVersion: e.policyVersion,
+            policy,
+            reserved: e.reserved,
+          },
+          null,
+          2,
+        )
+      : "";
+  }
+  const available = !!e && ui.connected;
+  for (const id of ["stopExperiment", "loadExperimentReport"])
+    $(id).disabled = !available || !!$(id).dataset.busy;
+  $("configureExperiment").disabled =
+    !available ||
+    !!e?.running ||
+    !subscriptionExperimentModel(state) ||
+    !!$("configureExperiment").dataset.busy;
+  const exhausted =
+    policy &&
+    [
+      ["generations", "maxGenerations"],
+      ["outputTokens", "maxOutputTokens"],
+    ].some(([used, limit]) => (e.reserved?.[used] ?? 0) >= policy[limit]);
+  $("startExperiment").disabled =
+    !available ||
+    !policy ||
+    !e.stopped ||
+    e.running ||
+    !subscriptionExperimentModel(state) ||
+    policy.modelId !== state?.inference?.selected ||
+    !(Date.parse(policy.expiresAt) > Date.now()) ||
+    exhausted ||
+    !!$("startExperiment").dataset.busy;
 }
 
 function renderBootstrap(state) {
@@ -1517,6 +1582,7 @@ function clearPrivateView() {
     "providerKey",
     "providerResponse",
     "bootstrapRevision",
+    "experimentGoal",
   ])
     $(id).value = "";
   for (const id of [
@@ -1533,6 +1599,9 @@ function clearPrivateView() {
     "modelBilling",
     "bootstrapStatus",
     "bootstrapHistory",
+    "experimentStatus",
+    "experimentPolicy",
+    "experimentReport",
   ])
     $(id).textContent = "";
   delete $("loadBootstrapHistory").dataset.next;
@@ -2066,3 +2135,100 @@ $("loadBootstrapHistory").onclick = () =>
         ? "Reload bootstrap history"
         : "Next history page";
   }, $("loadBootstrapHistory"));
+
+// Experiment authority is separate from manual bootstrap and owner activation.
+$("configureExperiment").onclick = () =>
+  action(async (checkSession) => {
+    const e = ui.latest?.experiments;
+    const modelId = subscriptionExperimentModel(ui.latest);
+    const goal = $("experimentGoal").value.trim();
+    const startingRevisionId = $("bootstrapRevision").value.trim();
+    if (!e || e.running || !modelId)
+      throw Error(
+        "Choose and save a subscription model before configuring an experiment.",
+      );
+    if (!goal || !/^[a-f0-9]{64}$/.test(startingRevisionId))
+      throw Error(
+        "Enter an experiment goal and exact staged revision ID above.",
+      );
+    const policy = {
+      goal,
+      startingRevisionId,
+      expiresAt: new Date(Date.now() + 3600000).toISOString(),
+      maxGenerations: 6,
+      maxOutputTokens: 24576,
+      maxProposals: 1,
+      maxTests: 1,
+      modelId,
+      sandbox: "disposable-candidate-v1",
+      paidInferenceBudgetUsd: 0,
+      externalAccess: false,
+    };
+    if (
+      !confirm(
+        "Save a stopped experiment for " +
+          startingRevisionId +
+          " using " +
+          modelId +
+          "? Goal: " +
+          goal +
+          ". Hard limits: 6 generation dispatches, 1 proposal, 1 test; expires in one hour. Requested output-token allowance: 24576, reserved for planning only. ChatGPT does not enforce a provider output cap; actual output may exceed the allowance. Reported usage is recorded and further work stops when over allowance. Subscription only, no paid inference or external access. No activation. Hosting costs are not metered.",
+      )
+    )
+      return;
+    await client.request("experiments/configure", {
+      confirmation: "CONFIGURE_EXPERIMENT",
+      expectedVersion: e.version,
+      policy,
+    });
+    checkSession();
+    $("experimentReport").textContent = "";
+    await refresh();
+  }, $("configureExperiment"));
+$("startExperiment").onclick = () =>
+  action(async (checkSession) => {
+    const e = ui.latest?.experiments;
+    if (
+      !e?.policy ||
+      e.running ||
+      !e.stopped ||
+      !subscriptionExperimentModel(ui.latest) ||
+      e.policy.modelId !== ui.latest.inference.selected ||
+      !(Date.parse(e.policy.expiresAt) > Date.now()) ||
+      e.reserved.generations >= e.policy.maxGenerations ||
+      e.reserved.outputTokens >= e.policy.maxOutputTokens
+    )
+      return;
+    if (
+      !confirm(
+        "Start the displayed experiment policy for " +
+          e.policy.startingRevisionId +
+          " using " +
+          e.policy.modelId +
+          "? It consumes subscription allowance and may stage candidates and run disposable tests within the saved dispatch/proposal/test limits. Output-token reservations are planning allowances, not an enforced provider cap: actual output may exceed them. Reported usage is recorded and further work stops when over allowance. No automatic activation. Stop does not refund reservations or guarantee cancellation of already-dispatched provider work.",
+      )
+    )
+      return;
+    await client.request("experiments/start", {
+      confirmation: "START_EXPERIMENT",
+      expectedVersion: e.version,
+    });
+    checkSession();
+    await refresh();
+  }, $("startExperiment"));
+$("stopExperiment").onclick = () =>
+  action(async (checkSession) => {
+    await client.request("experiments/stop", {});
+    checkSession();
+    await refresh();
+    checkSession();
+    notice(
+      "Experiment stop recorded. Already-dispatched provider work may finish; reservations are not refunded.",
+    );
+  }, $("stopExperiment"));
+$("loadExperimentReport").onclick = () =>
+  action(async (checkSession) => {
+    const report = await client.request("experiments/report");
+    checkSession();
+    $("experimentReport").textContent = JSON.stringify(report, null, 2);
+  }, $("loadExperimentReport"));

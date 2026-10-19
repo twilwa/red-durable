@@ -5,6 +5,8 @@ import {
 } from "../shared/providers.ts";
 import { Agent } from "agents";
 import { AutonomyStore, AutonomyError, BootstrapRunner } from "./autonomy";
+import { ExperimentStore } from "./experiments";
+import { ExperimentRunner } from "./experiment-runner";
 import { CompanionStore } from "./companion";
 import { TelemetryStore } from "./telemetry";
 import { SkillsStore } from "./skills";
@@ -221,6 +223,7 @@ class Maintenance extends LifecycleCapability {
     });
   }
   async onJob(): Promise<LifecycleJobOutcome> {
+    await this.owner.experimentRunner.tick();
     await this.owner.recoverAdmissions();
     await this.owner.exclusive(() => this.owner.reconcileArchive());
     await this.owner.exclusive(() => this.owner.reconcileOperations());
@@ -229,7 +232,8 @@ class Maintenance extends LifecycleCapability {
     if (
       (await this.owner.harness.pending()).length ||
       result?.pending ||
-      this.owner.discordPending()
+      this.owner.discordPending() ||
+      this.owner.experiments.status().running
     )
       return { rescheduleAt: Date.now() + (result?.failed ? 60000 : 5000) };
   }
@@ -240,6 +244,8 @@ export class RedAgent extends Agent<Env> {
   companion: CompanionStore;
   autonomy: AutonomyStore;
   bootstrap: BootstrapRunner;
+  experiments: ExperimentStore;
+  experimentRunner: ExperimentRunner;
   telemetry: TelemetryStore;
   skills: SkillsStore;
   memory: DurableMemory;
@@ -271,6 +277,20 @@ export class RedAgent extends Agent<Env> {
     this.autonomy = new AutonomyStore(ctx.storage.sql);
     this.bootstrap = new BootstrapRunner(this.autonomy, (id, signal) =>
       this.releases.validate(id, signal),
+    );
+    this.experiments = new ExperimentStore(
+      ctx.storage.sql,
+      () => Date.now(),
+      () =>
+        env.ALLOW_PAID_API === "true"
+          ? []
+          : this.inference.models().filter((id) => !isMeteredModel(id)),
+    );
+    this.experimentRunner = new ExperimentRunner(
+      ctx.storage.sql,
+      this.experiments,
+      this.inference,
+      this.releases,
     );
     this.code = createCodemodeRuntime({
       ctx,
@@ -932,8 +952,19 @@ export class RedAgent extends Agent<Env> {
         if (request.method === "POST" && path === "/api/bridge/poll") {
           const b = await body(request);
           this.inference.setModels(b.modelIds ?? []);
+          await this.experimentRunner.tick();
           await this.ctx.storage.put("bridge:lastSeen", Date.now());
-          return json({ job: this.inference.poll() });
+          this.experimentRunner.fence();
+          return json({
+            job: this.inference.poll(Date.now(), (scope) => {
+              try {
+                this.experiments.guard(scope);
+                return true;
+              } catch {
+                return false;
+              }
+            }),
+          });
         }
         if (request.method === "POST" && path === "/api/bridge/result") {
           const b = await body(request);
@@ -965,6 +996,31 @@ export class RedAgent extends Agent<Env> {
     if (!(await authorized(request, this.env.OWNER_TOKEN)))
       return json({ error: "Unauthorized" }, 401);
     try {
+      if (request.method === "GET" && path === "/api/experiments")
+        return json(this.experiments.status());
+      if (request.method === "GET" && path === "/api/experiments/report")
+        return json(this.experimentRunner.report());
+      if (request.method === "POST" && path === "/api/experiments/stop")
+        return json(this.experimentRunner.stop());
+      if (request.method === "POST" && path === "/api/experiments/configure") {
+        const b = await body(request);
+        if (b.confirmation !== "CONFIGURE_EXPERIMENT")
+          throw new Error("Explicit experiment configuration required");
+        const policy = b.policy as { startingRevisionId?: unknown };
+        await this.releases.get(string(policy?.startingRevisionId));
+        if (this.experiments.status().running)
+          throw new Error("Stop the active experiment before configuring");
+        this.experimentRunner.stop();
+        return json(this.experiments.configure(b.policy, b.expectedVersion));
+      }
+      if (request.method === "POST" && path === "/api/experiments/start") {
+        const b = await body(request);
+        if (b.confirmation !== "START_EXPERIMENT")
+          throw new Error("Explicit experiment start required");
+        const result = this.experiments.start(b.expectedVersion);
+        await this.maintenance.wake();
+        return json(result);
+      }
       if (request.method === "GET" && path === "/api/autonomy")
         return json(this.autonomy.status());
       if (request.method === "GET" && path === "/api/autonomy/history")
@@ -1027,6 +1083,7 @@ export class RedAgent extends Agent<Env> {
           .toArray();
         return json({
           autonomy: this.autonomy.status(),
+          experiments: this.experiments.status(),
           discord: {
             enabled: this.env.DISCORD_ENABLED === "true",
             ...this.discord.status(),

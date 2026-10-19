@@ -507,13 +507,12 @@
                 credentials stay on the trusted inference host.
               </p>
               <section aria-labelledby="bootstrapTitle">
-                <h3 id="bootstrapTitle">Bootstrap experiments</h3>
+                <h3 id="bootstrapTitle">Manual bootstrap validation</h3>
                 <p class="hint">
-                  Self-directed exploration is not implemented. These controls
-                  only run an owner-selected candidate health validation in a
-                  disposable, network-denied facet. They grant no inference,
-                  external access or automatic promotion. Hosting costs are not
-                  metered here.
+                  These separate manual controls only run an owner-selected
+                  candidate health validation in a disposable, network-denied
+                  facet. They grant no inference, external access or automatic
+                  promotion. Hosting costs are not metered here.
                 </p>
                 <p id="bootstrapStatus" role="status"></p>
                 <button id="stopBootstrap" class="secondary" disabled>
@@ -563,6 +562,71 @@
                   Load bootstrap history
                 </button>
                 <pre id="bootstrapHistory"></pre>
+              </section>
+              <section aria-labelledby="experimentTitle">
+                <h3 id="experimentTitle">Bounded experiment sessions</h3>
+                <p class="hint">
+                  Disabled by default. Configure and explicitly start a
+                  subscription-only experiment to generate candidate proposals
+                  and run bounded disposable validation. Nothing is activated
+                  automatically. No external access or paid inference is
+                  allowed; hosting costs are not metered here.
+                </p>
+                <p id="experimentStatus" role="status"></p>
+                <button id="stopExperiment" class="secondary" disabled>
+                  Stop experiment only
+                </button>
+                <p class="hint">
+                  Stop cancels this experiment’s inference and candidate work.
+                  Already-dispatched provider work may finish and consume
+                  subscription allowance. Reservations are not refunded. Chat,
+                  summaries, Discord and manual bootstrap work are unaffected.
+                </p>
+                <details id="experimentConfiguration">
+                  <summary>Configure a bounded experiment</summary>
+                  <label for="experimentGoal">Experiment goal</label>
+                  <textarea
+                    id="experimentGoal"
+                    maxlength="2000"
+                    rows="3"
+                    placeholder="Describe the candidate improvement to explore"
+                  ></textarea>
+                  <p class="hint">
+                    Uses the exact staged revision ID entered in the manual
+                    bootstrap field above and the current saved subscription
+                    model. Hard limits: 6 generation dispatches, 1 proposal, 1
+                    test; expires one hour after configuration. Requested
+                    output-token allowance: 24,576, reserved for planning only.
+                    ChatGPT does not enforce this provider output cap; actual
+                    output may exceed it. Reported usage is recorded and further
+                    work stops when over the allowance. Failed and interrupted
+                    reservations count. Sandbox: disposable-candidate-v1.
+                  </p>
+                  <button id="configureExperiment" class="secondary" disabled>
+                    Save stopped experiment
+                  </button>
+                  <button id="startExperiment" class="secondary" disabled>
+                    Start bounded experiment
+                  </button>
+                </details>
+                <details>
+                  <summary>Saved experiment policy and reservations</summary>
+                  <p class="hint">
+                    Output-token reservations are a requested planning
+                    allowance, not an enforced provider cap. Actual reported
+                    output can exceed that allowance.
+                  </p>
+                  <pre id="experimentPolicy"></pre>
+                </details>
+                <button id="loadExperimentReport" class="quiet" disabled>
+                  Load restricted experiment report
+                </button>
+                <p class="hint">
+                  The report is restricted experiment evidence, not the full
+                  conversation or proof of improved behavior. Review candidates
+                  separately before any owner activation.
+                </p>
+                <pre id="experimentReport"></pre>
               </section>
               <div id="connectionDetails"></div>
               <details class="raw">

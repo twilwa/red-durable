@@ -87,14 +87,17 @@ export class ReleaseManager {
     this.options = options;
   }
 
-  async propose(input: {
-    source: string;
-    description?: string;
-  }): Promise<Revision> {
+  async propose(
+    input: { source: string; description?: string },
+    guard?: () => void,
+  ): Promise<Revision> {
+    guard?.();
     validateRevisionInput(input);
     const id = await revisionId(input.source);
+    guard?.();
     return this.options.storage.transaction(async (storage) => {
       const existing = await storage.get<Revision>(PREFIX + id);
+      guard?.();
       if (existing) return existing;
       const revision: Revision = {
         id,
@@ -148,10 +151,18 @@ export class ReleaseManager {
     return worker.getDurableObjectClass("MutableAgent");
   }
 
-  async validate(id: string, signal?: AbortSignal): Promise<Validation> {
-    signal?.throwIfAborted();
+  async validate(
+    id: string,
+    signal?: AbortSignal,
+    options: { evidenceOnly?: boolean; guard?: () => void } = {},
+  ): Promise<Validation> {
+    const check = () => {
+      signal?.throwIfAborted();
+      options.guard?.();
+    };
+    check();
     const revision = await this.get(id);
-    signal?.throwIfAborted();
+    check();
     // Unique test database: cannot modify production state or reuse a warm test.
     const name = `candidate:${id}:${crypto.randomUUID()}`;
     let timer: ReturnType<typeof setTimeout> | undefined;
@@ -213,12 +224,15 @@ export class ReleaseManager {
           );
         }),
       ]);
+      check();
       const validation: Validation = {
         revisionId: id,
         checkedAt: new Date().toISOString(),
         contractVersion: 1,
       };
-      await this.options.storage.put(`release:validated:${id}`, validation);
+      // Experiment evidence must not make a revision eligible for promotion.
+      if (!options.evidenceOnly)
+        await this.options.storage.put(`release:validated:${id}`, validation);
       return validation;
     } finally {
       if (timer !== undefined) clearTimeout(timer);

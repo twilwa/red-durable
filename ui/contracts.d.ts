@@ -87,7 +87,39 @@ export interface FullSkill extends Skill {
     warning: string;
   } | null;
 }
+export interface ExperimentPolicy {
+  goal: string;
+  startingRevisionId: string;
+  expiresAt: string;
+  maxGenerations: number;
+  maxOutputTokens: number;
+  maxProposals: number;
+  maxTests: number;
+  modelId: string;
+  sandbox: "disposable-candidate-v1";
+  paidInferenceBudgetUsd: 0;
+  externalAccess: false;
+}
+export interface ExperimentStatus {
+  version: number;
+  policyVersion: number;
+  policy: ExperimentPolicy | null;
+  sessionId: string | null;
+  epoch: number;
+  state: string;
+  running: boolean;
+  stopped: boolean;
+  reserved: {
+    generations: number;
+    outputTokens: number;
+    proposals: number;
+    tests: number;
+  };
+  reason: string | null;
+  event: string | null;
+}
 export interface State {
+  experiments?: ExperimentStatus;
   inference: {
     mode: string;
     models: string[];
