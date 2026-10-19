@@ -83,6 +83,10 @@ class RedClient {
   companion() {
     return this.request("companion");
   }
+  /** @param {number} id @param {number} [offset] @returns {Promise<import('../ui/contracts').SourceEventPage>} */
+  sourceEvent(id, offset = 0) {
+    return this.request("companion/event?id=" + id + "&offset=" + offset);
+  }
   /** @returns {Promise<{skills: import('../ui/contracts').Skill[], telemetry: unknown}>} */
   skills() {
     return this.request("skills");

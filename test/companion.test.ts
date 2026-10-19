@@ -226,3 +226,62 @@ test("import attribution, temporary expiry, source pages and validation stay exp
   assert.throws(() => store.listEvents(0, 51));
   db.close();
 });
+
+test("work journal is bounded, stable, source-linked and never invents verified success", () => {
+  const { db, store } = setup();
+  const e = owner(store);
+  const model = store.recordEvent({
+    source: "assistant",
+    sourceRef: "fixture-model",
+    text: "I finished everything",
+  });
+  const c = store.proposeCommitment({
+    text: "A".repeat(400),
+    scope: "fixture",
+    sourceEventIds: [model.id],
+  });
+  store.ownerAcceptCommitment(c.id, e.id);
+  store.transitionCommitment(c.id, "blocked", [model.id]);
+  assert.throws(
+    () => store.transitionCommitment(c.id, "completed", [model.id]),
+    /owner or tool evidence/,
+  );
+  const journal = store.workJournal(2);
+  assert.equal(journal.entries.length, 2);
+  assert.equal(journal.omitted, 1);
+  assert.equal(journal.entries[0].status, "blocked");
+  assert.deepEqual(journal.entries[0].evidenceEventIds, [model.id]);
+  assert.equal(journal.entries[0].text.length, 240);
+  assert.equal(journal.entries[0].textTruncated, true);
+  assert.match(journal.notice, /not independently verified/);
+  assert.deepEqual(store.workJournal(2), journal);
+  assert.throws(() => store.workJournal(51), /Invalid journal/);
+  assert.throws(() => store.workJournal(0), /Invalid journal/);
+  store.transitionCommitment(c.id, "completed", [e.id]);
+  assert.equal(store.workJournal().entries[0].status, "completed");
+  assert.match(store.workJournal().notice, /not independently verified/);
+  db.close();
+});
+
+test("journal rebuilds the same records after SQLite reopen without duplicate entries", () => {
+  const dir = mkdtempSync(join(tmpdir(), "red-journal-"));
+  const path = join(dir, "state.sqlite");
+  try {
+    const first = setup(path);
+    const e = owner(first.store);
+    const c = first.store.proposeCommitment({
+      text: "Synthetic work",
+      scope: "fixture",
+      sourceEventIds: [e.id],
+    });
+    first.store.ownerAcceptCommitment(c.id, e.id);
+    const journal = first.store.workJournal();
+    first.db.close();
+    const second = setup(path);
+    assert.deepEqual(second.store.workJournal(), journal);
+    assert.equal(new Set(journal.entries.map((e) => e.key)).size, 2);
+    second.db.close();
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

@@ -22,13 +22,41 @@ export interface Commitment {
   scope: string;
   dueAt?: string;
   sourceEventIds: number[];
-  history: unknown[];
+  history: {
+    id: number;
+    status: string;
+    evidenceEventIds: number[];
+    recordedAt: string;
+  }[];
 }
 export interface Companion {
   charter: Charter | null;
   beliefs: Belief[];
   commitments: Commitment[];
   authorization: string;
+  journal: {
+    entries: {
+      key: string;
+      commitmentId: number;
+      text: string;
+      textTruncated: boolean;
+      status: string;
+      recordedAt: string;
+      evidenceEventIds: number[];
+    }[];
+    omitted: number;
+    notice: string;
+  };
+}
+export interface SourceEventPage {
+  id: number;
+  source: string;
+  sourceRef: string;
+  text: string;
+  occurredAt: string;
+  recordedAt: string;
+  offset: number;
+  nextOffset: number | null;
 }
 export interface Revision {
   id: string;

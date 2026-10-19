@@ -74,7 +74,7 @@ interface Env extends DiscordEnvironment {
   SUMMARY_MODEL_ID?: string;
 }
 const output = (value: unknown) => ({
-  content: [
+  output: [
     {
       type: "text" as const,
       text: JSON.stringify(truncateResult(value, { maxChars: 16000 })),
@@ -1017,6 +1017,15 @@ export class RedAgent extends Agent<Env> {
       }
       if (request.method === "GET" && path === "/api/companion")
         return json(this.companion.inspect());
+      if (request.method === "GET" && path === "/api/companion/event") {
+        const params = new URL(request.url).searchParams;
+        return json(
+          this.companion.readEvent(
+            Number(params.get("id")),
+            Number(params.get("offset") ?? 0),
+          ),
+        );
+      }
       if (request.method === "GET" && path === "/api/skill")
         return json(
           this.skills.read(string(new URL(request.url).searchParams.get("id"))),

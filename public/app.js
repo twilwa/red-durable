@@ -1087,6 +1087,79 @@ function renderBeliefs() {
     $("beliefs").append(card);
   }
 }
+function sourceEvidence(ids) {
+  const request = ui.continuityRequest;
+  const details = element("details", undefined, "raw");
+  details.append(element("summary", "Source evidence"));
+  for (const id of ids || []) {
+    const source = element("div");
+    let offset = 0;
+    const read = button(
+      "Read source event #" + id,
+      async (control, checkSession) => {
+        const page = await client.sourceEvent(id, offset);
+        checkSession();
+        // Dismissed or refreshed views must not be repopulated by a late read.
+        if (
+          request !== ui.continuityRequest ||
+          !ui.inspectorOpen ||
+          !source.isConnected ||
+          !details.open ||
+          ui.inspector !== "commitmentPanel"
+        )
+          return;
+        if (offset === 0)
+          source.append(
+            element(
+              "p",
+              page.source +
+                " · " +
+                page.sourceRef +
+                " · " +
+                dateText(page.occurredAt),
+              "card-meta",
+            ),
+          );
+        source.append(element("pre", page.text));
+        if (page.nextOffset === null) control.hidden = true;
+        else {
+          offset = page.nextOffset;
+          control.textContent = "Read next part of source #" + id;
+        }
+      },
+    );
+    source.append(read);
+    details.append(source);
+  }
+  return details;
+}
+function renderWorkJournal() {
+  const container = $("workJournal");
+  container.replaceChildren();
+  const journal = ui.companion?.journal;
+  if (!journal?.entries.length)
+    return empty(container, "No recorded work yet.");
+  for (const entry of journal.entries) {
+    const card = reviewCard(
+      "Commitment #" + entry.commitmentId + " · recorded " + entry.status,
+      entry.text + (entry.textTruncated ? "…" : ""),
+    );
+    card.append(
+      element("p", dateText(entry.recordedAt), "card-meta"),
+      sourceEvidence(entry.evidenceEventIds),
+    );
+    container.append(card);
+  }
+  if (journal.omitted)
+    container.append(
+      element(
+        "p",
+        journal.omitted +
+          " older journal entries omitted. Full transition history remains on each commitment.",
+        "card-meta",
+      ),
+    );
+}
 function renderCommitments() {
   $("commitments").replaceChildren();
   const commitments = ui.companion?.commitments || [];
@@ -1153,6 +1226,44 @@ function renderCommitments() {
       controls,
       commitment.status === "proposed" ? "approval-card" : "",
     );
+    card.append(
+      element(
+        "p",
+        "Commitment #" + commitment.id + " · " + (commitment.scope || ""),
+        "card-meta",
+      ),
+    );
+    if (commitment.status === "proposed")
+      card.append(
+        element(
+          "p",
+          "Awaiting your review. Accept records this commitment; it does not authorize tools or external actions.",
+          "card-meta",
+        ),
+      );
+    if (commitment.status === "blocked")
+      card.append(
+        element(
+          "p",
+          "Blocked. Inspect the latest transition evidence before choosing the next step.",
+          "card-meta",
+        ),
+      );
+    card.append(sourceEvidence(commitment.sourceEventIds));
+    const history = element("details", undefined, "raw");
+    history.append(element("summary", "Transition history"));
+    for (const change of commitment.history || []) {
+      const row = element("div");
+      row.append(
+        element(
+          "p",
+          "Recorded " + change.status + " · " + dateText(change.recordedAt),
+        ),
+        sourceEvidence(change.evidenceEventIds),
+      );
+      history.append(row);
+    }
+    card.append(history);
     if (commitment.dueAt)
       card.append(
         element("p", "Due " + dateText(commitment.dueAt), "card-meta"),
@@ -1178,6 +1289,7 @@ async function loadContinuity() {
     }
     renderBeliefs();
     renderCommitments();
+    renderWorkJournal();
     updateControls();
   } finally {
     if (
@@ -1339,6 +1451,7 @@ function clearPrivateView() {
     "messages",
     "beliefs",
     "commitments",
+    "workJournal",
     "skillPanel",
     "revisions",
     "modelSelect",

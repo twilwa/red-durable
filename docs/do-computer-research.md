@@ -177,6 +177,22 @@ improvements. Validate real desktop/mobile layout separately; this review is sou
 
 ## Suggested implementation order
 
+### Product direction: autonomy and self-evolution
+
+Red's goal extends beyond a request-driven assistant: persistent interests, self-directed
+experiments and changes to her own behavior. The intended direction is a constrained
+bootstrap followed by mostly-allow operation within explicitly approved capabilities,
+budgets and environments. The prototype's current owner-review requirements are the
+implemented baseline, not a decision to keep all behavior approval-heavy forever.
+
+An autonomy policy still needs concrete scope and acceptance criteria. Identity maturity
+alone should not unlock access: evaluate stop compliance, bounded spending, recovery,
+change explanations and rollback behavior. Isolated proposal/build/test can be more
+permissive than activation or external action. Any future automatic promotion must define
+eligible changes, independent checks, limits and recovery before it is enabled; it should
+not let generated code silently expand its own permissions. No such policy is enabled by
+the research, Pi upgrade or journal work.
+
 1. Approval/review cards and a source-linked Work journal: visible utility with no new
    external capabilities. Preserve current API semantics and UI regression protections.
 2. Owner-created one-shot reminders with durable delivery receipts. Prove crash recovery

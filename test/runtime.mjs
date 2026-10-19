@@ -119,6 +119,7 @@ try {
   await start();
   console.log("PASS real workerd starts");
   assert.equal((await fetch(base + "/api/state")).status, 401);
+  assert.equal((await fetch(base + "/api/companion/event?id=1")).status, 401);
   await api("state", undefined, {
     status: 401,
     headers: { Origin: "https://attacker.invalid" },
@@ -420,6 +421,22 @@ try {
     "open",
   );
   assert.equal(continuity.charter.version, 1);
+  const workEntry = continuity.journal.entries.find(
+    (e) => e.commitmentId === commitment.id && e.status === "open",
+  );
+  assert.ok(workEntry);
+  const journalSource = await api(
+    `companion/event?id=${workEntry.evidenceEventIds[0]}`,
+  );
+  assert.equal(journalSource.source, "owner");
+  await api(
+    `companion/event?id=${workEntry.evidenceEventIds[0]}&offset=-1`,
+    undefined,
+    { status: 400 },
+  );
+  await api("companion/event?id=0", undefined, { status: 400 });
+  assert.equal(JSON.parse(journalSource.text).action, "accept-commitment");
+  assert.match(continuity.journal.notice, /not independently verified/);
   console.log(
     "PASS real continuity proposals, attribution, owner acceptance, correction lineage, and charter",
   );
@@ -481,6 +498,14 @@ try {
   );
   console.log(
     "PASS charter, commitments, corrected beliefs, and skills survive restart",
+  );
+  assert.deepEqual((await api("companion")).journal, continuity.journal);
+  assert.deepEqual(
+    await api(`companion/event?id=${workEntry.evidenceEventIds[0]}`),
+    journalSource,
+  );
+  console.log(
+    "PASS source-linked work journal and evidence survive real runtime restart",
   );
   // Discord fixtures use fake relay credentials, event IDs and model responses.
   // No connection is made to Discord, OpenAI or a real subscription account.
@@ -868,6 +893,18 @@ try {
           .textContent.includes("lighthouse"),
       );
       assert.match(await page.inputValue("#charter"), /curious/);
+      await page.click("#commitmentsTab");
+      await page.waitForSelector("#workJournal article");
+      const journalEvidence = page.locator("#workJournal details").first();
+      await journalEvidence.locator("summary").click();
+      await journalEvidence.locator("button").first().click();
+      await journalEvidence.locator("pre").waitFor();
+      assert.match(await page.textContent("#workJournal"), /owner-action:/);
+      await mkdir(join(root, "artifacts"), { recursive: true });
+      await page.screenshot({
+        path: join(root, "artifacts/ui-work-journal.png"),
+        fullPage: true,
+      });
       await page.click("#releasesTab");
       await page.waitForFunction(() =>
         document
@@ -916,6 +953,7 @@ try {
       await page.click("#disconnect");
       await page.waitForSelector("#login:not([hidden])");
       assert.equal(await page.textContent("#messages"), "");
+      assert.equal(await page.textContent("#workJournal"), "");
       assert.deepEqual(
         await page.evaluate(() => ({
           local: localStorage.length,

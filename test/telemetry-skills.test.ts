@@ -149,7 +149,7 @@ test("failing routing cases cannot activate; docs strictly pinned and paginated"
   assert.throws(() => store.activate(s.revisionId, null));
   const docs = listDocs();
   assert.equal(docs.length, 3);
-  assert.equal(docs[0].version, "1.1.0");
+  assert.equal(docs[0].version, "1.3.0");
   assert.equal(readDoc(docs[0].id).text.length, 2000);
   assert.ok(readDoc(docs[0].id).nextOffset);
   assert.throws(() => readDoc("https://attacker.example"));

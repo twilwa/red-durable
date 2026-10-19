@@ -18,7 +18,7 @@ The host must curate labels independently and keep held-out records out of optim
 
 ## Documentation
 
-`listDocs` and `readDoc` expose bounded pages of build-time snapshots, with source URL, version and SHA-256. The complete installed Pi Durable README is pinned to 1.1.0. Authoring guidance is a dated summary of official Pi skills documentation. There is no arbitrary runtime URL fetching or executable documentation.
+`listDocs` and `readDoc` expose bounded pages of build-time snapshots, with source URL, version and SHA-256. The complete installed Pi Durable README is pinned to 1.3.0. Authoring guidance is a dated summary of official Pi skills documentation. There is no arbitrary runtime URL fetching or executable documentation.
 
 ## Research connection
 

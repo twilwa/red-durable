@@ -2040,3 +2040,122 @@ test("the UI expires a flow even while provider status cannot be fetched", async
   assert.equal(ui.get("providerResponse").value, "");
   assert.deepEqual([...ui.intervalDelays.values()], [2500]);
 });
+
+function journalFixture(
+  sourceRead: (path: string) => Response | Promise<Response>,
+) {
+  return fixture((path) => {
+    if (path.startsWith("companion/event?")) return sourceRead(path);
+    if (path === "companion")
+      return Response.json({
+        ...companion(),
+        commitments: [
+          {
+            id: 9,
+            text: "Synthetic blocked work",
+            scope: "fixture",
+            status: "blocked",
+            sourceEventIds: [4],
+            history: [],
+          },
+        ],
+        journal: {
+          entries: [
+            {
+              key: "commitment-change:3",
+              commitmentId: 9,
+              text: "<script>literal fixture</script>",
+              status: "blocked",
+              recordedAt: "2026-10-19",
+              evidenceEventIds: [4],
+            },
+          ],
+          omitted: 2,
+        },
+      });
+  });
+}
+function openJournalEvidence(ui: ReturnType<typeof fixture>) {
+  const details = ui.get("workJournal").querySelectorAll("details")[0];
+  details.open = true;
+  return {
+    details,
+    read: namedButton(ui, "workJournal", "Read source event #4"),
+  };
+}
+const eventPage = (text: string, nextOffset: number | null) => ({
+  id: 4,
+  source: "assistant",
+  sourceRef: "fixture-source",
+  occurredAt: "2026-10-19",
+  text,
+  nextOffset,
+});
+
+test("work journal renders literal progress and pages exact source evidence without duplicate reads", async () => {
+  const pending = deferred<Response>();
+  const ui = journalFixture((path) =>
+    path.endsWith("offset=0")
+      ? pending.promise
+      : Response.json(eventPage("second part", null)),
+  );
+  await connect(ui);
+  await ui.run("openInspector('commitmentPanel')");
+  assert.match(ui.get("commitments").textContent, /Blocked. Inspect/);
+  assert.match(ui.get("workJournal").textContent, /recorded blocked/);
+  assert.match(
+    ui.get("workJournal").textContent,
+    /<script>literal fixture<\/script>/,
+  );
+  assert.match(ui.get("workJournal").textContent, /2 older journal/);
+  const { read } = openJournalEvidence(ui);
+  const click = read.onclick!();
+  read.onclick!();
+  assert.equal(
+    ui.calls.filter((c) => c.path.startsWith("companion/event?")).length,
+    1,
+  );
+  pending.resolve(Response.json(eventPage("first part", 2000)));
+  await click;
+  assert.match(ui.get("workJournal").textContent, /assistant · fixture-source/);
+  await read.onclick!();
+  assert.equal(ui.calls.at(-1)!.path, "companion/event?id=4&offset=2000");
+  assert.match(ui.get("workJournal").textContent, /second part/);
+  assert.equal(read.hidden, true);
+  ui.run("lock()");
+  assert.equal(ui.get("workJournal").textContent, "");
+});
+
+test("closing source evidence or locking during a read never restores late private content", async () => {
+  for (const interruption of ["collapse", "lock", "close-panel", "refresh"]) {
+    const pending = deferred<Response>();
+    const ui = journalFixture(() => pending.promise);
+    await connect(ui);
+    await ui.run("openInspector('commitmentPanel')");
+    const { details, read } = openJournalEvidence(ui);
+    const click = read.onclick!();
+    if (interruption === "collapse") details.open = false;
+    else if (interruption === "lock") ui.run("lock()");
+    else if (interruption === "refresh") await ui.run("loadContinuity()");
+    else ui.run("closeInspector()");
+    pending.resolve(Response.json(eventPage("LATE PRIVATE SOURCE", null)));
+    await click;
+    assert.doesNotMatch(
+      ui.get("workJournal").textContent,
+      /LATE PRIVATE SOURCE/,
+    );
+  }
+});
+
+test("owner rejection while reading journal evidence locks and clears the journal", async () => {
+  const ui = journalFixture(() =>
+    Response.json({ error: "Unauthorized" }, { status: 401 }),
+  );
+  await connect(ui);
+  await ui.run("openInspector('commitmentPanel')");
+  const { read } = openJournalEvidence(ui);
+  await read.onclick!();
+  assert.equal(ui.run("ui.connected"), false);
+  assert.equal(ui.get("workJournal").textContent, "");
+  assert.match(ui.get("error").textContent, /Owner access was rejected/);
+});

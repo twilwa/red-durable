@@ -341,3 +341,66 @@ HOME=/tmp/red-prefix-build-home XDG_CONFIG_HOME=/tmp/red-prefix-build-home \
 TEST_LOOPBACK_ONLY=true npm run test:runtime
 git diff --check
 ```
+
+## Pi Durable upgrade checkpoint — 2026-10-19
+
+Updated the published Pi Durable, Pi AI and Chord packages from 1.1.0 to exact
+1.3.0 pins, with the lockfile regenerated. The npm registry's `latest` tags were
+checked on 2026-10-19. All three resolve to one compatible 1.3.0 installation;
+`agents` remains pinned to 0.28.0 and its declared Pi peer ranges accept 1.3.0.
+Unrelated direct dependencies were not upgraded.
+
+The Pi 1.2 tool-result API renamed `content` to `output`; Red's shared tool-result
+adapter now returns that field. The embedded Pi README, SHA-256 and versioned
+source link now match the installed package. A regression test checks the exact
+manifest/lockfile/installed versions and every byte of that snapshot.
+
+A synthetic SQLite fixture generated using the actual 1.1.0 harness covers an
+old pending model-issued tool call and an unsafe call interrupted after intent.
+The 1.3.0 harness reopens that database, migrates both tasks to `pi.tool` v2,
+executes only the never-started call, reports the unsafe interrupted call as
+failed, and preserves the original transcript. A second close/reopen does not
+repeat either call. This is upgrade/recovery coverage, not a backup/restore
+certification for a deployed account.
+
+Verified locally:
+
+- Both TypeScript checks, Prettier and `git diff --check`.
+- 292 automated tests: 283 Node tests and nine Vitest release tests.
+- Wrangler dry-run bundle: 4779.47 KiB raw / 897.25 KiB gzip.
+- All 22 real-workerd checkpoints, including actual Pi deferred inference,
+  tool-result delivery through Code Mode, facet upgrade/rollback and persistence,
+  provider/billing isolation, prompt-cache behavior, and Discord recovery.
+
+Pi 1.3.0 adds optional SQLite table prefixes and fixes post-compaction system
+baseline placement. Red keeps its existing Agents session-store adapter and
+prefix, so this upgrade does not rename or abandon existing tables. Chord's
+remote-object API changes do not apply to Red's public transport: Red does not
+expose Chord remote links. New Pi built-in Code Mode/image packages are transitive
+dependencies only; Red still uses its existing network-denied Cloudflare Code
+Mode boundary and does not enable shell, image, or additional agent tools.
+
+Upstream `main` has unreleased schema-v2/sleep APIs with a rollback restriction;
+those changes are deliberately excluded. Future upgrades must reassess migration
+and rollback behavior rather than assuming a minor version is compatible.
+
+No live provider calls, account sign-in, deployment, dependency auto-update,
+permission expansion or browser visual-pass claim is included.
+
+## Integrated work journal checkpoint — 2026-10-19
+
+The Pi 1.3.0 upgrade is integrated with the source-linked Work journal. The journal
+projects persisted commitment transitions, labels completion as recorded rather than
+independently verified, and provides owner-authenticated paginated evidence reads.
+Lock, stale-view, duplicate-click and owner-rejection cases have regression coverage.
+Output is bounded; existing retained commitment history is not a bounded storage model.
+
+The combined tree passed formatting, both typechecks, the complete Node/Vitest suite
+and Wrangler dry-run build (4823.78 KiB raw / 899.20 KiB gzip). All 23 real-workerd
+checkpoints passed, including journal/source persistence across a process restart.
+Independent final code review found no blocking issue.
+
+Browser visual QA was attempted but could not launch Chromium because this host
+denied its process-singleton socket. The supported escalation also failed before
+execution. Browser test scenarios are included, but no visual-pass claim is made.
+No account sign-in, real inference or deployment was performed.

@@ -4,7 +4,7 @@ The Durable Object owns conversation state, orchestration, archives and tools. A
 
 ## What is supported, and what remains unverified
 
-Installed Pi 1.1.0 has `openai` → “Sign in with ChatGPT.” OpenAI documents eligible plan usage for open-source/local clients and a self-hosted VM credential-transfer procedure. Its overview directs developers offering paid or remotely hosted apps to an interest form. It does not explicitly classify a private Cloudflare Container/Durable Object deployment. A personal self-hosted VM is the documented cloud option; a hosted multiuser product or Cloudflare Container must not be assumed covered without clarification.
+Installed Pi 1.3.0 has `openai` → “Sign in with ChatGPT.” OpenAI documents eligible plan usage for open-source/local clients and a self-hosted VM credential-transfer procedure. Its overview directs developers offering paid or remotely hosted apps to an interest form. It does not explicitly classify a private Cloudflare Container/Durable Object deployment. A personal self-hosted VM is the documented cloud option; a hosted multiuser product or Cloudflare Container must not be assumed covered without clarification.
 
 - https://developers.openai.com/siwc/token-sharing-open-source
 - https://developers.openai.com/siwc/token-sharing-open-source/self-hosted-vms

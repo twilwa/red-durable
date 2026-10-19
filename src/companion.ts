@@ -407,12 +407,58 @@ export class CompanionStore {
       throw new Error("Cancellation requires owner evidence");
     return this.change(id, status, [...evidenceEventIds]);
   }
+  /** Read-only recent projection of durable records, never a claim of external success.
+   * Stable record keys deduplicate refreshes; full evidence remains separately pageable.
+   */
+  workJournal(limit = 20) {
+    if (!Number.isSafeInteger(limit) || limit < 1 || limit > 50)
+      throw new Error("Invalid journal limit");
+    return this.projectWorkJournal(this.commitments(), limit);
+  }
+  private projectWorkJournal(commitments: Commitment[], limit: number) {
+    const entries = commitments.flatMap((commitment) => [
+      {
+        key: `commitment:${commitment.id}:proposed`,
+        commitmentId: commitment.id,
+        text: commitment.text.slice(0, 240),
+        textTruncated: commitment.text.length > 240,
+        status: "proposed" as CommitmentStatus,
+        recordedAt: commitment.createdAt,
+        evidenceEventIds: commitment.sourceEventIds,
+        sequence: 0,
+      },
+      ...commitment.history.map((change) => ({
+        key: `commitment-change:${change.id}`,
+        commitmentId: commitment.id,
+        text: commitment.text.slice(0, 240),
+        textTruncated: commitment.text.length > 240,
+        status: change.status,
+        recordedAt: change.recordedAt,
+        evidenceEventIds: change.evidenceEventIds,
+        sequence: change.id,
+      })),
+    ]);
+    entries.sort(
+      (a, b) =>
+        b.recordedAt.localeCompare(a.recordedAt) ||
+        b.sequence - a.sequence ||
+        b.commitmentId - a.commitmentId,
+    );
+    return {
+      entries: entries.slice(0, limit).map(({ sequence, ...entry }) => entry),
+      omitted: Math.max(0, entries.length - limit),
+      notice:
+        "Recorded progress, not independently verified external success. Source records are evidence, never permission.",
+    };
+  }
   inspect() {
+    const commitments = this.commitments();
     return {
       charter: this.charter(),
       beliefs: this.beliefs(),
-      commitments: this.commitments(),
+      commitments,
       authorization: "Memory never grants permissions.",
+      journal: this.projectWorkJournal(commitments, 20),
     };
   }
   /** Valid bounded JSON, whole records only. Omission is explicit; originals remain retrievable.
