@@ -430,3 +430,40 @@ Requested output tokens are planning reservations, not a provider-enforced cap.
 Reported output exceeding that allowance halts future work; already spent tokens
 are not reversed. No live provider/account access, automatic activation, deployment
 or browser visual pass was performed or claimed.
+
+## Kimi Code integration checkpoint, 2026-10-24
+
+Added explicit Kimi Code membership-key onboarding and the exact `k3.1-pro`
+model through native Responses. This checkpoint preserves the current main
+branch's Pi 1.3.0, prompt caching, autonomy and experiment changes. It does not
+replace those changes with the older local prototype.
+
+Verified on the final implementation:
+
+- Both TypeScript checks and full Prettier check passed.
+- 359 automated tests passed: 343 Node tests and 16 Vitest release tests.
+- All 28 real-workerd checkpoints passed, including Kimi's qualified model
+  selection and subscription classification without metered consent.
+- Wrangler dry-run bundle passed at 4819.84 KiB raw / 905.72 KiB gzip.
+- Offline native Pi transport tests cover the fixed authenticated catalog,
+  exact K3.1 Pro ID, honest client identity, mandatory thinking, tool-call
+  parsing and opaque reasoning replay confined to host RAM. Interleaved
+  summaries preserve active continuation state. Missing/restarted/evicted
+  continuations fail closed. Queued steers after a completed answer and bounded
+  whole-scope cache eviction have regression coverage.
+- Provider key storage/removal survives a real store reopen, preserves other
+  providers and uses owner-only file permissions. UI tests cover Kimi key wiping,
+  explicit selection, subscription-specific consent and owner-armed experiments.
+
+Background jobs remain enabled on the selected subscription route as requested.
+The provider documentation records Kimi's restriction on non-interactive
+subscription use; this change does not certify that unattended jobs are eligible.
+No live account, key, quota or model behavior was tested. Browser QA could not
+launch Chromium because this host denies its process-singleton socket, so no
+visual-pass claim is made.
+
+Cloudflare deployment was not performed. `wrangler whoami` on this host reported
+no authentication. The dry run did not publish a Worker. The normal Worker and
+static assets plus the trusted-host bridge must be updated together; no Kimi
+Worker secret, new binding or migration is required. The optional Container
+scaffold remains disabled.

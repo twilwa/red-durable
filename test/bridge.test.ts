@@ -332,10 +332,15 @@ test("provider credentials stay separate and deleting one preserves others acros
       type: "api_key",
       key: "fixture-zen",
     }));
+    await store.credentials.modify("kimi-code", async () => ({
+      type: "api_key",
+      key: "fixture-kimi",
+    }));
     assert.deepEqual(await store.credentials.list(), [
       { providerId: "openai", type: "oauth" },
       { providerId: "openrouter", type: "api_key" },
       { providerId: "opencode-zen", type: "api_key" },
+      { providerId: "kimi-code", type: "api_key" },
     ]);
     await store.credentials.delete("openrouter");
     await store.close();
@@ -345,6 +350,16 @@ test("provider credentials stay separate and deleting one preserves others acros
       (await store.credentials.read("openai")).access,
       "fixture-oauth",
     );
+    assert.equal(
+      (await store.credentials.read("opencode-zen")).key,
+      "fixture-zen",
+    );
+    assert.equal(
+      (await store.credentials.read("kimi-code")).key,
+      "fixture-kimi",
+    );
+    await store.credentials.delete("kimi-code");
+    assert.equal(await store.credentials.read("kimi-code"), undefined);
     assert.equal(
       (await store.credentials.read("opencode-zen")).key,
       "fixture-zen",

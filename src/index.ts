@@ -701,7 +701,12 @@ export class RedAgent extends Agent<Env> {
         model,
         summaryContext({ context, source }),
         {
-          maxTokens: 180,
+          // K3.1 Pro output limits include mandatory thinking tokens. Keep the
+          // summary text bound unchanged, but budget for low-effort reasoning.
+          maxTokens: modelProvider(model.id) === "kimi-code" ? 4096 : 180,
+          ...(modelProvider(model.id) === "kimi-code"
+            ? { reasoning: "low" as const }
+            : {}),
           sessionId: `red-memory:${kind}:${id}:${count}:${sourceId}`,
           signal: AbortSignal.timeout(15000),
         },

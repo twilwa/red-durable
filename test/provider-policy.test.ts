@@ -36,3 +36,9 @@ test("metered models require owner billing approval, including background summar
     requireModelBillingApproval(id, "USE_METERED_PROVIDER");
   }
 });
+
+test("Kimi Code is an explicit subscription route including memory and experiment jobs", () => {
+  assert.equal(modelProvider("kimi-code::k3.1-pro"), "kimi-code");
+  assert.equal(validBridgeModel("kimi-code::k3.1-pro"), true);
+  requireModelBillingApproval("kimi-code::k3.1-pro", undefined);
+});

@@ -152,7 +152,7 @@ export type CompanionAction =
 
 /** Status only. Secret values are submitted separately and never returned. */
 export type ProviderId =
-  "openai" | "openrouter" | "opencode-zen" | "opencode-go";
+  "openai" | "kimi-code" | "openrouter" | "opencode-zen" | "opencode-go";
 export interface Provider {
   id: ProviderId;
   name: string;

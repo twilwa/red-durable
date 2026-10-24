@@ -333,7 +333,11 @@ try {
   );
   await api("bridge/poll", { modelIds: ["gpt-4.1-mini"] }, { status: 401 });
   await bridge("poll", {
-    modelIds: ["gpt-4.1-mini", "openrouter::fixture/model"],
+    modelIds: [
+      "gpt-4.1-mini",
+      "openrouter::fixture/model",
+      "kimi-code::k3.1-pro",
+    ],
   });
   const providerSetup = await api("providers");
   assert.equal(providerSetup.available, false);
@@ -360,6 +364,14 @@ try {
   assert.equal(paidState.inference.providerId, "openrouter");
   assert.equal(paidState.inference.selected, "openrouter::fixture/model");
   await api("model", { id: "opencode-go::fixture" }, { status: 400 });
+  await api("model", { id: "kimi-code::k3.1-pro" });
+  const kimiState = await api("state");
+  assert.equal(kimiState.inference.mode, "subscription");
+  assert.equal(kimiState.inference.providerId, "kimi-code");
+  assert.equal(kimiState.inference.selected, "kimi-code::k3.1-pro");
+  console.log(
+    "PASS explicit Kimi Code selection remains subscription-backed without metered consent",
+  );
   await bridge("poll", { modelIds: ["gpt-4.1-mini"] });
   await api("model", { id: "gpt-4.1-mini" });
   console.log(

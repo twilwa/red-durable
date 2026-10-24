@@ -101,6 +101,7 @@ function fixture(options = {}) {
       model("gemini-3.5-flash", "opencode", "google-generative-ai"),
       model("mystery-preview-free", "opencode"),
     ],
+    "kimi-code": [model("k3.1-pro", "kimi-code")],
     ...options.providerModels,
   };
   const providers = Object.entries(providerModels).map(([id, list]) => ({
@@ -174,6 +175,8 @@ function fixture(options = {}) {
             { slug: "unknown", visibility: "list" },
           ],
         });
+      if (url.includes("api.kimi.ai"))
+        return json({ data: [{ id: "k3.1-pro", supports_tool_use: true }] });
       if (url.includes("openrouter"))
         return json({
           data: [
@@ -236,9 +239,9 @@ async function loginDone(manager) {
 test("provider setup starts disconnected and does not read ambient credentials or fetch", async () => {
   const f = fixture();
   const status = await f.manager.status();
-  assert.equal(status.providers.length, 4);
+  assert.equal(status.providers.length, 5);
   assert(status.providers.every((entry) => !entry.connected));
-  assert.equal(status.providers[3].status, "disabled");
+  assert.equal(status.providers[4].status, "disabled");
   assert.equal(status.flow, null);
   assert.equal(
     await f.modelOptions.authContext.env("OPENAI_API_KEY"),
@@ -1080,5 +1083,165 @@ test("ambient SDK debug settings cannot log provider bodies or forward unrelated
     delete process.env.OPENAI_PROJECT_ID;
     delete process.env.ANTHROPIC_CUSTOM_HEADERS;
     delete process.env.OPENAI_CUSTOM_HEADERS;
+  }
+});
+
+test("Kimi key validates only its fixed authenticated catalog and advertises exact K3.1 Pro", async () => {
+  const f = fixture();
+  await f.manager.connectKey("kimi-code", KEY);
+  assert.deepEqual(await f.manager.catalog(), ["kimi-code::k3.1-pro"]);
+  assert.equal(f.credentials.get("kimi-code").type, "api_key");
+  assert.equal(f.calls.length, 0);
+  for (const request of f.fetches) {
+    assert.equal(request.url, "https://api.kimi.ai/coding/v1/models");
+    assert.equal(request.init.headers.Authorization, `Bearer ${KEY}`);
+    assert.match(request.init.headers["User-Agent"], /^red-durable\/0\.1\.0 /);
+    assert.equal(request.init.redirect, "error");
+  }
+  const status = await f.manager.status();
+  const kimi = status.providers.find(({ id }) => id === "kimi-code");
+  assert.equal(kimi.status, "connected");
+  assert.match(kimi.message, /membership allowance/);
+  assert(!JSON.stringify(status).includes(KEY));
+  await assert.rejects(f.manager.startLogin("kimi-code"));
+  await f.manager.disconnect("kimi-code");
+  assert(!f.credentials.has("kimi-code"));
+  await f.manager.close();
+});
+
+test("Kimi key rejection and missing K3.1 entitlement never select another model", async () => {
+  const rejected = fixture({ fetch: async () => json({ error: KEY }, 401) });
+  await assert.rejects(
+    rejected.manager.connectKey("kimi-code", KEY),
+    /authentication/,
+  );
+  assert(!rejected.credentials.has("kimi-code"));
+  await rejected.manager.close();
+  const missing = fixture({
+    credentials: { "kimi-code": { type: "api_key", key: KEY } },
+    fetch: async () =>
+      json({ data: [{ id: "kimi-for-coding" }, { id: "k3" }] }),
+  });
+  assert.deepEqual(await missing.manager.catalog(), []);
+  await assert.rejects(
+    missing.manager.infer(job("kimi-code::k3.1-pro")),
+    /unavailable/,
+  );
+  assert.equal(missing.calls.length, 0);
+  await missing.manager.close();
+});
+
+test("real pinned Pi sends Kimi Responses with mandatory thinking and truthful identity", async () => {
+  const f = fixture({
+    credentials: { "kimi-code": { type: "api_key", key: KEY } },
+  });
+  await f.manager.close();
+  const requests = [];
+  const manager = createProviderManager({
+    store: f.store,
+    clock: () => NOW,
+    fetcher: async (url, init) => {
+      if (String(url).endsWith("/models"))
+        return json({ data: [{ id: "k3.1-pro" }] });
+      requests.push({ url: String(url), init, payload: JSON.parse(init.body) });
+      const response = toolSse();
+      const text = await response.text();
+      const reasoning = {
+        type: "reasoning",
+        id: "rs_kimi_fixture",
+        encrypted_content: "synthetic-private-kimi-state",
+        summary: [],
+      };
+      const added = {
+        type: "response.output_item.added",
+        output_index: 1,
+        item: reasoning,
+      };
+      const done = {
+        type: "response.output_item.done",
+        output_index: 1,
+        item: reasoning,
+      };
+      return new Response(
+        text.replace(
+          "event: response.completed",
+          `event: ${added.type}\ndata: ${JSON.stringify(added)}\n\nevent: ${done.type}\ndata: ${JSON.stringify(done)}\n\nevent: response.completed`,
+        ),
+        { headers: { "Content-Type": "text/event-stream" } },
+      );
+    },
+  });
+  try {
+    const cache = { version: 1, namespace: HOST, purpose: "conversation" };
+    const first = await manager.infer({
+      ...job("kimi-code::k3.1-pro"),
+      cache,
+      options: {},
+    });
+    assert.equal(first.stopReason, "toolUse");
+    assert.equal(first.content[0].type, "toolCall");
+    const request = requests[0];
+    assert.equal(request.url, "https://api.kimi.ai/coding/v1/responses");
+    assert.equal(
+      new Headers(request.init.headers).get("authorization"),
+      `Bearer ${KEY}`,
+    );
+    assert.match(
+      new Headers(request.init.headers).get("user-agent"),
+      /^red-durable\/0\.1\.0 /,
+    );
+    assert.equal(request.payload.model, "k3.1-pro");
+    assert.deepEqual(request.payload.reasoning, { effort: "max" });
+    assert.equal(request.payload.store, false);
+    assert.deepEqual(request.payload.include, ["reasoning.encrypted_content"]);
+    assert.equal(request.payload.prompt_cache_key, undefined);
+    assert.equal(request.init.redirect, "error");
+    // Explicit owner request leaves background summaries on this same route.
+    const background = { ...job("kimi-code::k3.1-pro"), summary: true };
+    assert(!JSON.stringify(first).includes("synthetic-private-kimi-state"));
+    await manager.infer(background);
+    assert.equal(requests.length, 2);
+    assert.equal(requests[1].payload.model, "k3.1-pro");
+    const tool = first.content.find((block) => block.type === "toolCall");
+    await manager.infer({
+      ...job("kimi-code::k3.1-pro"),
+      cache,
+      context: {
+        messages: [
+          {
+            ...first,
+            provider: "red-subscription",
+            api: "red-subscription",
+            model: "kimi-code::k3.1-pro",
+          },
+          {
+            role: "toolResult",
+            toolCallId: tool.id,
+            toolName: tool.name,
+            content: [{ type: "text", text: "synthetic tool result" }],
+            isError: false,
+            timestamp: NOW,
+          },
+        ],
+      },
+    });
+    assert.equal(requests.length, 3);
+    assert(
+      requests[2].payload.input.some(
+        (item) => item.encrypted_content === "synthetic-private-kimi-state",
+      ),
+    );
+    assert(
+      !JSON.stringify([...f.files.values()]).includes(
+        "synthetic-private-kimi-state",
+      ),
+    );
+    await assert.rejects(
+      manager.infer({ ...background, options: { reasoning: "off" } }),
+      /requires thinking/,
+    );
+    assert.equal(requests.length, 3);
+  } finally {
+    await manager.close();
   }
 });

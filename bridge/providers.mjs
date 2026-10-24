@@ -10,6 +10,14 @@ import {
   cacheIdentity,
   cachePayload,
 } from "./prompt-cache.mjs";
+import {
+  kimiCodeProvider,
+  kimiCodePayload,
+  createKimiContinuationCache,
+  KIMI_CODE_BASE,
+  KIMI_CODE_MODEL,
+  KIMI_CODE_USER_AGENT,
+} from "./kimi-code.mjs";
 
 const LOGIN_MS = 10 * 60 * 1000;
 const CATALOG_MS = 5 * 60 * 1000;
@@ -23,8 +31,10 @@ const DESCRIPTIONS = [
     kind: "api_key",
     piId: "opencode",
   },
+  { id: "kimi-code", name: "Kimi Code", kind: "api_key", piId: "kimi-code" },
 ];
 const ENDPOINTS = {
+  "kimi-code": `${KIMI_CODE_BASE}/models`,
   openai: "https://api.openai.com/v1/models",
   openrouter: "https://openrouter.ai/api/v1/models",
   "opencode-zen": "https://opencode.ai/inference/v1/models",
@@ -48,6 +58,10 @@ const SAFE_MESSAGES = {
   busy: "A provider operation is already running. Wait for it to finish or cancel sign-in.",
   invalid: "Invalid provider setup request.",
   closed: "Provider manager is closed.",
+  continuation:
+    "Kimi continuation state is unavailable on this host. Stop the interrupted turn and send a new message. No other provider was used.",
+  thinking:
+    "K3.1 Pro requires thinking. Choose a reasoning level other than off.",
   recovery:
     "Credential recovery is required. Stop the bridge and follow the documented reconnect procedure.",
 };
@@ -57,7 +71,12 @@ export class ProviderError extends Error {
     super(SAFE_MESSAGES[code] ?? SAFE_MESSAGES.transient);
     this.name = "ProviderError";
     this.code = code === "recovery" ? "CREDENTIAL_RECOVERY_REQUIRED" : code;
-    this.kind = code === "recovery" ? "auth" : code;
+    this.kind =
+      code === "recovery"
+        ? "auth"
+        : ["continuation", "thinking"].includes(code)
+          ? "invalid"
+          : code;
   }
 }
 
@@ -201,6 +220,12 @@ function knownToolModel(entry, item, model) {
       )
     );
   }
+  if (entry.id === "kimi-code")
+    return (
+      model.id === KIMI_CODE_MODEL &&
+      item.supports_tool_use !== false &&
+      model.api === "openai-responses"
+    );
   return model.api === "openai-responses";
 }
 
@@ -291,6 +316,7 @@ export function createProviderManager({
     throw new ProviderError("invalid");
   hardenSDKEnvironment();
   const lifecycle = new AbortController();
+  const kimiContinuation = createKimiContinuationCache();
   let closed = false;
   let mutation = false;
   let mutationDone = null;
@@ -386,6 +412,7 @@ export function createProviderManager({
       },
       openrouterProvider(),
       opencodeProvider(),
+      kimiCodeProvider(),
     ];
   }
   for (const provider of providers) models.setProvider(provider);
@@ -406,20 +433,22 @@ export function createProviderManager({
     const paths =
       entry.id === "openai"
         ? { "openai-responses": "https://api.openai.com/v1/responses" }
-        : entry.id === "openrouter"
-          ? {
-              "openai-completions":
-                "https://openrouter.ai/api/v1/chat/completions",
-              "anthropic-messages": "https://openrouter.ai/api/v1/messages",
-            }
-          : {
-              "openai-completions":
-                "https://opencode.ai/inference/openai/v1/chat/completions",
-              "openai-responses":
-                "https://opencode.ai/inference/openai/v1/responses",
-              "anthropic-messages":
-                "https://opencode.ai/inference/anthropic/v1/messages",
-            };
+        : entry.id === "kimi-code"
+          ? { "openai-responses": `${KIMI_CODE_BASE}/responses` }
+          : entry.id === "openrouter"
+            ? {
+                "openai-completions":
+                  "https://openrouter.ai/api/v1/chat/completions",
+                "anthropic-messages": "https://openrouter.ai/api/v1/messages",
+              }
+            : {
+                "openai-completions":
+                  "https://opencode.ai/inference/openai/v1/chat/completions",
+                "openai-responses":
+                  "https://opencode.ai/inference/openai/v1/responses",
+                "anthropic-messages":
+                  "https://opencode.ai/inference/anthropic/v1/messages",
+              };
     return (input, init) => {
       let url;
       try {
@@ -449,6 +478,8 @@ export function createProviderManager({
       const headers = new Headers(init?.headers ?? input?.headers);
       headers.delete("openai-organization");
       headers.delete("openai-project");
+      if (entry.id === "kimi-code")
+        headers.set("User-Agent", KIMI_CODE_USER_AGENT);
       return fetcher(input, { ...init, headers, redirect: "error" });
     };
   }
@@ -548,9 +579,13 @@ export function createProviderManager({
   async function requestJson(url, key, signal, limit) {
     return boundedJson(
       await fetcher(url, {
-        headers: key
-          ? { Authorization: `Bearer ${key}`, Accept: "application/json" }
-          : { Accept: "application/json" },
+        headers: {
+          ...(key ? { Authorization: `Bearer ${key}` } : {}),
+          Accept: "application/json",
+          ...(url === ENDPOINTS["kimi-code"]
+            ? { "User-Agent": KIMI_CODE_USER_AGENT }
+            : {}),
+        },
         redirect: "error",
         signal: AbortSignal.any([
           lifecycle.signal,
@@ -599,6 +634,8 @@ export function createProviderManager({
         if (!auth?.auth?.apiKey || auth.auth.baseUrl || auth.auth.headers)
           throw new ProviderError("auth");
         key = auth.auth.apiKey;
+      } else if (entry.id === "kimi-code") {
+        key = credential.key;
       } else if (entry.id === "openrouter") {
         await validateOpenRouterKey(credential.key, lifecycle.signal);
       }
@@ -642,7 +679,9 @@ export function createProviderManager({
         current.message = available.length
           ? entry.kind === "oauth"
             ? "ChatGPT connected. Account models refreshed."
-            : "Key verified. API usage may be billed."
+            : entry.id === "kimi-code"
+              ? "Kimi Code key verified. K3.1 Pro uses your membership allowance for conversation and memory jobs; plan restrictions apply."
+              : "Key verified. API usage may be billed."
           : "No supported tool-capable models were found.";
       }
     } catch (error) {
@@ -900,6 +939,14 @@ export function createProviderManager({
     try {
       if (providerId === "openrouter")
         await validateOpenRouterKey(key, lifecycle.signal);
+      if (providerId === "kimi-code") {
+        const catalog = await requestJson(
+          ENDPOINTS[providerId],
+          key,
+          lifecycle.signal,
+        );
+        if (!Array.isArray(catalog?.data)) throw new ProviderError("model");
+      }
       assertOpen();
       await cacheNamespace(providerId, true);
       assertOpen();
@@ -914,6 +961,7 @@ export function createProviderManager({
       assertOpen();
       const current = state.get(providerId);
       current.generation++;
+      if (providerId === "kimi-code") kimiContinuation.clear();
       current.status = "unverified";
       current.models = [];
       await performRefresh([entry]);
@@ -945,6 +993,7 @@ export function createProviderManager({
       }
       await store.credentials.delete(providerId);
       await cacheNamespace(providerId, true);
+      if (providerId === "kimi-code") kimiContinuation.clear();
       const current = state.get(providerId);
       current.generation++;
       Object.assign(current, {
@@ -1006,6 +1055,7 @@ export function createProviderManager({
     const known = models.getModel(entry.piId, selected.modelId);
     if (!known) throw new ProviderError("model");
     const model = { ...known };
+    if (entry.id === "kimi-code") model.baseUrl = KIMI_CODE_BASE;
     if (entry.id === "openai")
       model.compat = {
         ...model.compat,
@@ -1035,7 +1085,19 @@ export function createProviderManager({
         job,
       });
       const capability = cacheCapability(entry.id, model);
-      const message = await models.completeSimple(model, job.context, {
+      let context = job.context;
+      if (entry.id === "kimi-code") {
+        if (job.options?.reasoning === "off")
+          throw new ProviderError("thinking");
+        if (!job.summary) {
+          try {
+            context = kimiContinuation.restore(context, key);
+          } catch {
+            throw new ProviderError("continuation");
+          }
+        }
+      }
+      const message = await models.completeSimple(model, context, {
         ...(job.options?.reasoning !== undefined
           ? { reasoning: job.options.reasoning }
           : {}),
@@ -1056,11 +1118,15 @@ export function createProviderManager({
         cacheRetention: "none",
         onPayload: (payload) =>
           cachePayload(
-            entry.id === "openai" ? chatGPTPayload(payload) : payload,
+            entry.id === "openai"
+              ? chatGPTPayload(payload)
+              : entry.id === "kimi-code"
+                ? kimiCodePayload(payload, job.options?.reasoning)
+                : payload,
             {
               provider: entry.id,
               model,
-              context: job.context,
+              context,
               key,
               enabled: cachePolicy !== "off",
             },
@@ -1091,6 +1157,13 @@ export function createProviderManager({
         state.get(entry.id).message =
           "Key verified by the requested inference. API usage may be billed.";
       }
+      if (entry.id === "kimi-code" && !job.summary) {
+        try {
+          return kimiContinuation.remember(message, key);
+        } catch {
+          throw new ProviderError("continuation");
+        }
+      }
       return message;
     } catch (error) {
       const safe = safeStateError(entry.id, error);
@@ -1104,6 +1177,7 @@ export function createProviderManager({
     cancelCurrent(flow);
     closed = true;
     lifecycle.abort();
+    kimiContinuation.clear();
     inference?.abort();
     await mutationDone?.catch(() => {});
     await refreshPromise?.catch(() => {});

@@ -8,6 +8,7 @@ import type { MemorySql } from "./memory";
 export interface InferenceJob {
   id: string;
   modelId: string;
+  summary: boolean;
   context: Context;
   cache?: BridgeCacheScope;
   scope?: BridgeExperimentScope;
