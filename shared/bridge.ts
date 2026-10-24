@@ -17,6 +17,7 @@ export interface BridgeJob {
   leaseToken: string;
   expiresAt: number;
   modelId: string;
+  summary?: boolean;
   context: Context;
   cache?: BridgeCacheScope;
   scope?: BridgeExperimentScope;

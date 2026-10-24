@@ -1432,6 +1432,7 @@ const providers = (flow: ReturnType<typeof providerFlow> | null = null) => ({
   available: true,
   providers: [
     ["openai", "ChatGPT subscription", "oauth"],
+    ["kimi-code", "Kimi Code", "api_key"],
     ["openrouter", "OpenRouter", "api_key"],
     ["opencode-zen", "OpenCode Zen", "api_key"],
     ["opencode-go", "OpenCode Go", "subscription"],
@@ -1542,24 +1543,88 @@ test("API key save clears the password immediately, deduplicates submits and doe
   assert.doesNotMatch(ui.document.body.textContent, /synthetic-api-key/);
 });
 
-test("provider key cancel and navigation erase the secret without sending it", async () => {
+test("Kimi Code connects an API key with subscription consent, not OAuth or metered billing", async () => {
+  const saved = deferred<Response>();
+  const ui = fixture((path) =>
+    path === "providers"
+      ? Response.json(providers())
+      : path === "providers/key"
+        ? saved.promise
+        : undefined,
+  );
+  await openProviders(ui);
+  const card = ui
+    .get("providerCards")
+    .querySelector('[data-provider="kimi-code"]')!;
+  assert.match(card.textContent, /Personal interactive subscription allowance/);
+  assert.match(
+    card.textContent,
+    /guidelines restrict noninteractive automation/,
+  );
+  assert.match(card.textContent, /Background jobs remain enabled/);
+  assert.match(card.textContent, /responsible for checking/);
+  assert.doesNotMatch(card.textContent, /metered|credits|Sign in/i);
+  assert.deepEqual(
+    card.querySelectorAll("a").map((link) => link.getAttribute("href")),
+    ["https://www.kimi.com/code/console", "https://www.kimi.com/code/docs/en/"],
+  );
+  providerButton(ui, "kimi-code", "Connect API key").click();
+  assert.equal(ui.get("providerKeyTitle").textContent, "Connect Kimi Code");
+  assert.equal(ui.get("providerKey").getAttribute("type"), "password");
+  assert.match(ui.get("providerKeyForm").textContent, /subscription allowance/);
+  assert.match(ui.get("providerKeyForm").textContent, /stored on this trusted/);
+  assert.match(
+    ui.get("providerKeyForm").textContent,
+    /Background jobs remain enabled/,
+  );
+  assert.doesNotMatch(
+    ui.get("providerKeyForm").textContent,
+    /metered|credits/i,
+  );
+  input(ui.get("providerKey"), "synthetic-kimi-key-not-a-credential");
+  const pending = ui.get("providerKeyForm").onsubmit!({ preventDefault() {} });
+  ui.get("providerKeyForm").requestSubmit();
+  assert.equal(ui.get("providerKey").value, "");
+  const calls = ui.calls.filter((call) => call.path === "providers/key");
+  assert.equal(calls.length, 1);
+  assert.deepEqual(calls[0].body, {
+    providerId: "kimi-code",
+    apiKey: "synthetic-kimi-key-not-a-credential",
+    confirm: "STORE_SUBSCRIPTION_KEY",
+  });
+  saved.resolve(Response.json({ stored: true }));
+  await pending;
+  assert.equal(ui.get("providerKeyForm").hidden, true);
+  assert.match(ui.get("notice").textContent, /Choose K3\.1 Pro separately/);
+  assert.doesNotMatch(ui.get("notice").textContent, /metered|credits/i);
+  assert.equal(ui.calls.filter((call) => call.path === "model").length, 0);
+  assert.equal(
+    ui.calls.filter((call) => call.path === "providers/login").length,
+    0,
+  );
+  assert.equal(ui.get("modelSelect").value, "fixture-model");
+  assert.doesNotMatch(ui.document.body.textContent, /synthetic-kimi-key/);
+});
+
+test("provider key cancel, navigation and lock erase metered and Kimi keys without sending them", async () => {
   const ui = fixture((path) =>
     path === "providers" ? Response.json(providers()) : undefined,
   );
   await openProviders(ui);
-  for (const finish of [
-    () => ui.get("cancelProviderKey").click(),
-    () => ui.get("closeInspector").click(),
-    () => ui.get("disconnect").click(),
-  ]) {
-    if (!ui.run("ui.connected")) await connect(ui);
-    await ui.run("openInspector('connection')");
-    providerButton(ui, "opencode-zen", "Connect API key").click();
-    input(ui.get("providerKey"), "synthetic-unsaved-key");
-    finish();
-    assert.equal(ui.get("providerKey").value, "");
-    assert.equal(ui.get("providerKeyForm").hidden, true);
-  }
+  for (const id of ["opencode-zen", "kimi-code"])
+    for (const finish of [
+      () => ui.get("cancelProviderKey").click(),
+      () => ui.get("closeInspector").click(),
+      () => ui.get("disconnect").click(),
+    ]) {
+      if (!ui.run("ui.connected")) await connect(ui);
+      await ui.run("openInspector('connection')");
+      providerButton(ui, id, "Connect API key").click();
+      input(ui.get("providerKey"), "synthetic-unsaved-key");
+      finish();
+      assert.equal(ui.get("providerKey").value, "");
+      assert.equal(ui.get("providerKeyForm").hidden, true);
+    }
   assert.equal(
     ui.calls.filter((call) => call.path === "providers/key").length,
     0,
@@ -1605,6 +1670,102 @@ test("metered model selection requires a billing confirmation that includes back
   assert.deepEqual(
     ui.calls.filter((call) => call.path === "model").at(-1)?.body,
     { id: "fixture-model" },
+  );
+});
+
+test("Kimi model selection shows subscription usage including summaries without metered consent", async () => {
+  let selected = "fixture-model";
+  const ui = fixture((path, body) => {
+    if (path === "state")
+      return Response.json(
+        state({
+          inference: {
+            ...state().inference,
+            models: ["fixture-model", "kimi-code::k3.1-pro"],
+            selected,
+          },
+        }),
+      );
+    if (path === "model") {
+      selected = body.id;
+      return Response.json({ selected });
+    }
+  });
+  await connect(ui);
+  const option = ui
+    .get("modelSelect")
+    .options.find((node) => node.value === "kimi-code::k3.1-pro")!;
+  assert.equal(option.textContent, "Kimi Code · K3.1 Pro (subscription)");
+  ui.get("modelSelect").value = option.value;
+  ui.get("modelSelect").dispatchEvent({ type: "change" });
+  assert.match(ui.get("modelBilling").textContent, /Kimi Code subscription/);
+  assert.match(
+    ui.get("modelBilling").textContent,
+    /background memory summaries/,
+  );
+  assert.doesNotMatch(ui.get("modelBilling").textContent, /metered|credits/i);
+  await ui.get("setModel").onclick!();
+  assert.equal(ui.confirmations.length, 0);
+  assert.deepEqual(ui.calls.find((call) => call.path === "model")?.body, {
+    id: "kimi-code::k3.1-pro",
+  });
+  assert.equal(ui.get("modelSelect").value, "kimi-code::k3.1-pro");
+  ui.get("modelSelect").value = "fixture-model";
+  await ui.get("setModel").onclick!();
+  assert.equal(ui.get("modelSelect").value, "fixture-model");
+});
+
+test("a Kimi-only catalog never replaces the existing model choice implicitly", async () => {
+  const ui = fixture((path) =>
+    path === "state"
+      ? Response.json(
+          state({
+            inference: {
+              ...state().inference,
+              models: ["kimi-code::k3.1-pro"],
+            },
+          }),
+        )
+      : undefined,
+  );
+  await connect(ui);
+  assert.equal(ui.get("modelSelect").value, "");
+  assert.equal(ui.get("setModel").disabled, true);
+  assert.equal(ui.calls.filter((call) => call.path === "model").length, 0);
+});
+
+test("Kimi memory summary retries remain available and use subscription consent", async () => {
+  const ui = fixture((path) =>
+    path === "state"
+      ? Response.json(
+          state({
+            inference: {
+              ...state().inference,
+              selected: "kimi-code::k3.1-pro",
+              models: ["kimi-code::k3.1-pro"],
+              failures: [
+                {
+                  id: "synthetic-summary",
+                  summary: true,
+                  error: { message: "Synthetic summary failure" },
+                },
+              ],
+            },
+          }),
+        )
+      : undefined,
+  );
+  await connect(ui);
+  const retry = buttons(ui.get("inferenceErrors"))[0];
+  assert.equal(retry.textContent, "Retry summary");
+  ui.allowConfirmation(true);
+  await retry.onclick!();
+  assert.equal(ui.confirmations.length, 1);
+  assert.match(ui.confirmations[0], /subscription allowance/);
+  assert.doesNotMatch(ui.confirmations[0], /metered|credits/i);
+  assert.equal(
+    ui.calls.filter((call) => call.path.includes("retry")).length,
+    1,
   );
 });
 
@@ -2362,6 +2523,47 @@ test("experiment configuration sends explicit bounded subscription policy and st
     ),
     false,
   );
+});
+test("Kimi subscription models retain explicitly confirmed background experiment controls", async () => {
+  const modelId = "kimi-code::k3.1-pro";
+  const ui = fixture((path) =>
+    path === "state"
+      ? Response.json(
+          state({
+            inference: {
+              ...state().inference,
+              selected: modelId,
+              models: [modelId],
+            },
+            experiments: experimentState({
+              policy: { ...experimentState().policy, modelId },
+            }),
+          }),
+        )
+      : undefined,
+  );
+  await connect(ui);
+  assert.equal(ui.get("configureExperiment").disabled, false);
+  assert.equal(ui.get("startExperiment").disabled, false);
+  ui.get("experimentGoal").value = "Synthetic Kimi experiment goal";
+  ui.get("bootstrapRevision").value = "a".repeat(64);
+  ui.allowConfirmation(true);
+  await ui.get("configureExperiment").onclick!();
+  const request = ui.calls.find(
+    (call) => call.path === "experiments/configure",
+  )!;
+  assert.equal(request.body.confirmation, "CONFIGURE_EXPERIMENT");
+  assert.equal(request.body.policy.modelId, modelId);
+  assert.equal(request.body.policy.paidInferenceBudgetUsd, 0);
+  assert.doesNotMatch(ui.confirmations.at(-1)!, /ChatGPT/);
+  await ui.get("startExperiment").onclick!();
+  assert.equal(
+    ui.calls.find((call) => call.path === "experiments/start")!.body
+      .confirmation,
+    "START_EXPERIMENT",
+  );
+  assert.match(ui.confirmations.at(-1)!, /consumes subscription allowance/);
+  assert.equal(ui.confirmations.length, 2);
 });
 test("experiment stop is immediate and remains available without a subscription model", async () => {
   const ui = fixture((path) =>

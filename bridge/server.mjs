@@ -173,9 +173,14 @@ export async function startSetupServer({
         const providerId = value.providerId;
         switch (url.pathname) {
           case "/api/providers/key":
-            if (value.confirm !== "STORE_METERED_KEY")
+            if (
+              value.confirm !==
+              (providerId === "kimi-code"
+                ? "STORE_SUBSCRIPTION_KEY"
+                : "STORE_METERED_KEY")
+            )
               return reply(res, 400, {
-                error: "Confirm storing this metered provider key",
+                error: "Confirm storing this provider key on the trusted host",
               });
             await manager.connectKey(providerId, value.apiKey);
             break;

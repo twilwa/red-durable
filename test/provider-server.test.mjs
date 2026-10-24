@@ -217,3 +217,43 @@ test("setup refuses owner/bridge credential equality and insecure upstreams", as
     }),
   );
 });
+
+test("Kimi key requires subscription storage consent, not metered consent or OAuth", async () => {
+  const f = await fixture();
+  try {
+    for (const confirm of [undefined, "STORE_METERED_KEY"]) {
+      assert.equal(
+        (
+          await f.send("/api/providers/key", {
+            providerId: "kimi-code",
+            apiKey: "synthetic-kimi-key",
+            confirm,
+          })
+        ).status,
+        400,
+      );
+    }
+    assert.equal(
+      (
+        await f.send("/api/providers/key", {
+          providerId: "kimi-code",
+          apiKey: "synthetic-kimi-key",
+          confirm: "STORE_SUBSCRIPTION_KEY",
+        })
+      ).status,
+      200,
+    );
+    assert.deepEqual(f.calls[0], {
+      name: "connectKey",
+      args: ["kimi-code", "synthetic-kimi-key"],
+    });
+    assert.equal(
+      (await f.send("/api/providers/login", { providerId: "kimi-code" }))
+        .status,
+      400,
+    );
+    assert.equal(f.upstream.length, 0);
+  } finally {
+    await f.server.close();
+  }
+});

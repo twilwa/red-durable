@@ -25,6 +25,7 @@ const bridgeToken = "fixture-bridge-" + randomUUID();
 const session = "provider-browser-fixture";
 const fakeUpstream = "http://127.0.0.1:1";
 const subscriptionModel = "fixture-chatgpt-model";
+const kimiModel = "kimi-code::k3.1-pro";
 const paidModel = "openrouter::fixture/model";
 const safeAuthUrl =
   "https://auth.openai.com/api/accounts/authorize?state=fixture-only";
@@ -47,6 +48,7 @@ async function until(check, label, timeout = 10000) {
 function createFixture() {
   const entries = [
     { id: "openai", name: "ChatGPT", kind: "oauth" },
+    { id: "kimi-code", name: "Kimi Code", kind: "api_key" },
     { id: "openrouter", name: "OpenRouter", kind: "api_key" },
     { id: "opencode-zen", name: "OpenCode Zen", kind: "api_key" },
     { id: "opencode-go", name: "OpenCode Go", kind: "subscription" },
@@ -99,7 +101,7 @@ function createFixture() {
       return snapshot();
     },
     async connectKey(id, key) {
-      assert.ok(["openrouter", "opencode-zen"].includes(id));
+      assert.ok(["openrouter", "opencode-zen", "kimi-code"].includes(id));
       assert.equal(key, "fixture-api-key-never-a-real-credential");
       calls.key++;
       await controls.keyGate?.promise;
@@ -110,8 +112,13 @@ function createFixture() {
         message: "Synthetic key stored locally. No provider request was made.",
         models: [
           {
-            id: id === "openrouter" ? paidModel : "opencode-zen::fixture-model",
-            name: "Synthetic metered model",
+            id:
+              id === "kimi-code"
+                ? kimiModel
+                : id === "openrouter"
+                  ? paidModel
+                  : "opencode-zen::fixture-model",
+            name: id === "kimi-code" ? "K3.1 Pro" : "Synthetic metered model",
           },
         ],
       });
@@ -197,7 +204,10 @@ function createFixture() {
     if (url.pathname === "/api/state")
       return Response.json({
         inference: {
-          mode: selected.includes("::") ? "metered-bridge" : "subscription",
+          mode:
+            selected.includes("::") && selected !== kimiModel
+              ? "metered-bridge"
+              : "subscription",
           models: [
             subscriptionModel,
             ...entries
@@ -218,8 +228,9 @@ function createFixture() {
       });
     if (url.pathname === "/api/model") {
       const body = JSON.parse(options.body);
-      if (body.id.includes("::"))
+      if (body.id.includes("::") && body.id !== kimiModel)
         assert.equal(body.confirmPaid, "USE_METERED_PROVIDER");
+      else assert.equal(body.confirmPaid, undefined);
       calls.models.push(body);
       selected = body.id;
       return Response.json({ selected });
@@ -304,7 +315,7 @@ try {
   await page.locator("#toggleInspector").click();
   await page.locator("#connectionTab").click();
   await page.waitForFunction(
-    () => document.querySelectorAll(".provider-card").length === 4,
+    () => document.querySelectorAll(".provider-card").length === 5,
   );
   const card = (id) => page.locator('[data-provider="' + id + '"]');
   assert.equal(
@@ -397,6 +408,97 @@ try {
   await until(
     () => fixture.calls.models.length === 2,
     "return to subscription model",
+  );
+
+  assert.match(
+    await card("kimi-code").textContent(),
+    /Personal interactive subscription allowance/,
+  );
+  assert.match(
+    await card("kimi-code").textContent(),
+    /Background jobs remain enabled/,
+  );
+  assert.doesNotMatch(
+    await card("kimi-code").textContent(),
+    /metered|credits|Sign in/i,
+  );
+  assert.equal(
+    await card("kimi-code")
+      .getByRole("link", { name: "Open Kimi Code console ↗" })
+      .getAttribute("href"),
+    "https://www.kimi.com/code/console",
+  );
+  const connectKimi = () =>
+    card("kimi-code").getByRole("button", {
+      name: "Connect API key",
+      exact: true,
+    });
+  await connectKimi().click();
+  await page.locator("#providerKey").fill("fixture-unsaved-kimi-key");
+  await page.locator("#cancelProviderKey").click();
+  assert.equal(await page.locator("#providerKey").inputValue(), "");
+  assert.equal(await page.locator("#providerKeyForm").isHidden(), true);
+  assert.equal(fixture.calls.key, 1);
+  await connectKimi().click();
+  assert.match(
+    await page.locator("#providerKeyForm").textContent(),
+    /Kimi Code subscription allowance/,
+  );
+  assert.doesNotMatch(
+    await page.locator("#providerKeyForm").textContent(),
+    /metered|credits/i,
+  );
+  await page
+    .locator("#providerKey")
+    .fill("fixture-api-key-never-a-real-credential");
+  await page.locator("#saveProviderKey").click();
+  await page.locator("#providerKeyForm").waitFor({ state: "hidden" });
+  assert.equal(await page.locator("#providerKey").inputValue(), "");
+  assert.equal(fixture.calls.key, 2);
+  assert.equal(fixture.calls.login, 0);
+  await page.waitForFunction(
+    (id) =>
+      [...document.querySelector("#modelSelect").options].some(
+        (option) => option.value === id,
+      ),
+    kimiModel,
+  );
+  assert.equal(
+    await page.locator("#modelSelect").inputValue(),
+    subscriptionModel,
+  );
+  assert.equal(fixture.calls.models.length, 2);
+  await page.locator("#modelSelect").selectOption(kimiModel);
+  assert.match(
+    await page.locator("#modelBilling").textContent(),
+    /subscription allowance, including background memory summaries/,
+  );
+  let kimiPrompt = null;
+  const rejectKimiPrompt = async (dialog) => {
+    kimiPrompt = dialog.message();
+    await dialog.dismiss();
+  };
+  page.on("dialog", rejectKimiPrompt);
+  await page.locator("#setModel").click();
+  await until(
+    () => fixture.calls.models.length === 3 || kimiPrompt !== null,
+    "explicit Kimi subscription selection",
+  );
+  page.off("dialog", rejectKimiPrompt);
+  assert.equal(
+    kimiPrompt,
+    null,
+    "Kimi must not request metered billing consent",
+  );
+  assert.deepEqual(fixture.calls.models[2], { id: kimiModel });
+  await page.waitForFunction(
+    () => !document.querySelector("#modelSelect").disabled,
+  );
+  await page.locator("#modelSelect").selectOption(subscriptionModel);
+  await page.locator("#setModel").click();
+  await until(
+    () => fixture.calls.models.length === 4,
+    "return from Kimi to ChatGPT",
   );
 
   fixture.controls.loginGate = deferred();
@@ -527,7 +629,7 @@ try {
   );
   await page.locator("#toggleInspector").click();
   await page.waitForFunction(
-    () => document.querySelectorAll(".provider-card").length === 4,
+    () => document.querySelectorAll(".provider-card").length === 5,
   );
 
   let removalPrompt = "";
@@ -546,8 +648,8 @@ try {
         .textContent === "Not connected",
   );
 
-  await card("opencode-zen")
-    .getByRole("button", { name: "Connect API key", exact: true })
+  await card("kimi-code")
+    .getByRole("button", { name: "Replace API key", exact: true })
     .click();
   await page.locator("#providerKey").fill("fixture-unsaved-key-at-lock");
   await page.locator("#disconnect").click();
@@ -576,7 +678,7 @@ try {
   );
   assert.deepEqual(pageErrors, [], "Browser script errors");
   console.log(
-    "PASS provider browser fixtures: cards, literal status, key clearing/cancel, metered approval, interrupted/expired OAuth, local removal, mobile navigation, lock and empty browser storage.",
+    "PASS provider browser fixtures: cards, literal status, key clearing/cancel, Kimi subscription selection and background-usage disclosure, metered approval, interrupted/expired OAuth, local removal, mobile navigation, lock and empty browser storage.",
   );
   console.log("Screenshots: " + artifacts);
   console.log(

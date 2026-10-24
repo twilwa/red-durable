@@ -49,7 +49,7 @@ adaptation boundary, interaction guarantees and remaining limitations.
 - **Skill learning:** descriptions specify when and when not to invoke a skill. Proposals include evidence, positive/negative routing examples, immutable revisions, smoke tests, owner review and reversible activation. Full instructions load on demand. The offline held-out evaluator is a preparation tool; real-model improvement has not been measured.
 - **Self-modification:** the agent can read, write and validate executable JavaScript revisions for its `MutableAgent` facet. The owner reviews and activates them. The facet database survives promotion and code rollback.
 - **Provider-specific prefix caching:** deterministic instruction/archive prefixes, isolated conversation/summary routing keys, native short-lived Claude breakpoints and truthful cache-token telemetry. Hits, retention and billing remain provider/model-dependent; see [prompt-caching.md](docs/prompt-caching.md).
-- **Explicit provider choice:** ChatGPT remains the default, with owner-opted-in OpenRouter and OpenCode Zen keys on the trusted host. Metered model selection requires an explicit acknowledgement. Missing sign-in, quota problems, and offline inference never trigger provider fallback.
+- **Explicit provider choice:** ChatGPT remains the default. Kimi Code offers K3.1 Pro through an owner-supplied membership key, alongside owner-opted-in OpenRouter and OpenCode Zen keys on the trusted host. Metered model selection requires an explicit acknowledgement. Missing sign-in, quota problems, and offline inference never trigger provider fallback.
 
 - **Bounded agent-owned experiments:** owner-armed, disabled-by-default isolated source proposal/test loops with durable dispatch/tool budgets and scoped stop. No automatic activation; see [experiment sessions](docs/experiment-sessions.md).
 
@@ -82,8 +82,9 @@ Keep `npm run dev` running. In a second terminal, run `npm run bridge:dev`.
 It privately reuses the two tokens already in this project's `.dev.vars`, without
 copying or printing them. Open its printed loopback URL and
 **About red → Providers**. ChatGPT uses
-owner-operated browser sign-in; OpenRouter and OpenCode Zen use locally stored
-API keys. Saving a key does not choose a model. Go remains unavailable until
+owner-operated browser sign-in; Kimi Code, OpenRouter and OpenCode Zen use locally stored
+API keys. Kimi Code offers `k3.1-pro` and keeps conversation and background jobs
+on the selected subscription route. Review its usage restrictions before enabling it. Saving a key does not choose a model. Go remains unavailable until
 coding-only sessions can be isolated from general companion/memory traffic.
 
 See [providers.md](docs/providers.md) for exact setup, billing acknowledgements,

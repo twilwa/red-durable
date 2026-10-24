@@ -1,6 +1,6 @@
 # Provider connections on the trusted host
 
-The private UI can connect ChatGPT, OpenRouter and OpenCode Zen through a local
+The private UI can connect ChatGPT, Kimi Code, OpenRouter and OpenCode Zen through a local
 Node bridge. Credentials stay in the bridge's owner-only files, never in the
 Worker/Durable Object, browser storage, model context, telemetry or repository.
 No installation/test performs sign-in, purchases credits or calls a live model.
@@ -105,6 +105,72 @@ Pi model registry. Plan allowance and model availability belong to the account.
 Review ChatGPT Usage settings and any optional credit spending yourself; the app
 cannot guarantee subscription requests never use optional account credits.
 
+## Kimi Code and K3.1 Pro
+
+Choose **Connect API key** on the Kimi Code card. Sign in to the official
+[Kimi Code Console](https://www.kimi.com/code/console) yourself and obtain a
+membership key, then enter it in red's local password field and approve storage
+on that trusted host. This is API-key onboarding, not a borrowed first-party
+OAuth flow. Installation and tests do not create a key or sign in.
+
+The bridge checks the authenticated catalog at
+`https://api.kimi.ai/coding/v1/models` without generating text. It offers only
+`kimi-code::k3.1-pro` when the account catalog includes the exact `k3.1-pro` ID.
+It does not substitute `kimi-for-coding`, another Kimi model, or a paid API if
+that model is unavailable. A catalog match does not guarantee a particular
+account's quota or entitlement. Plus/Moderato and above support K3.1 Pro; higher
+tiers have larger context limits. Red retains its existing smaller bridge and
+context limits.
+
+Saving the key does not switch providers. In the model selector, choose
+**Kimi Code · K3.1 Pro** for the named session. That selection persists and is
+used for conversation, memory summaries and separately owner-armed experiments.
+Existing sessions and the global ChatGPT default are unchanged. Start a new
+named session for a clean K3.1 Pro conversation, as Kimi recommends when changing
+model families.
+
+K3.1 Pro uses Kimi's native Responses endpoint at
+`https://api.kimi.ai/coding/v1/responses`. Requests identify red-durable honestly,
+use the saved membership key and deny redirects. Thinking remains enabled:
+ordinary requests default to `max`; Pi low/minimal map to `low`, medium/high to
+`high`, and xhigh to `max`. An explicit `off` request fails instead of changing
+models. Memory summaries use low effort with a 4,096-token output budget because
+that budget includes reasoning; their existing 512-byte summary requirement is
+unchanged. This can consume more subscription quota than a non-thinking summary.
+
+Background jobs remain enabled on the selected subscription route by the owner's
+request. Kimi's current [community guidelines](https://www.kimi.com/code/docs/en/kimi-code/community-guidelines.html)
+restrict subscriptions to personal interactive use and prohibit non-interactive
+automation. The official Hermes integration covers personal agent use, but does
+not establish permission for unattended red jobs. Review plan eligibility with
+Kimi before running them. Account restrictions or quota exhaustion stop that
+provider; red never buys quota, impersonates another client or falls back to a
+metered provider. Optional extra-usage settings belong to the Kimi account;
+red does not configure them or guarantee the account will never charge them.
+
+K3.1 requires reasoning continuity across tool calls. The bridge keeps the
+original reasoning items and signatures only in bounded process memory,
+isolated by the existing account/session/experiment cache scope. The cache holds
+at most 64 responses and 16 MiB; old scopes are evicted whole when needed, and
+an evicted continuation fails closed. It returns only
+visible text and tool calls to the Worker and journal. A fresh turn reconstructs
+context from red's attributed archive, not an incomplete replay of prior Kimi
+reasoning. A bridge restart or lost continuation state stops an interrupted tool
+loop safely. Stop that turn and send a new message; do not assume an interrupted
+model request did not run. Background summaries do not clear an active turn's
+continuation state. No real-account continuation or quota behavior has been
+verified by the offline tests.
+
+### Propagating the provider change
+
+Deploy the updated normal Worker and static UI to the existing intended
+Cloudflare target, then restart the trusted-host bridge from the same revision.
+Both parts need this update: the Worker recognizes the qualified Kimi model and
+its subscription billing class, while the host owns authentication and inference.
+The existing Worker configuration needs no Kimi key, new binding or migration.
+Never put the membership key in Wrangler secrets or the Worker environment.
+The optional Cloudflare Container target remains disabled and unfinished.
+
 ## OpenRouter
 
 Create/copy an API key yourself from the official OpenRouter account page, enter
@@ -143,8 +209,8 @@ There is no Go-to-Zen metered fallback.
 ## Storage, failures and removal
 
 - Store directory 0700, files 0600, atomic fsync/rename and one exclusive runner
-  lock. Provider records remain separate. The subscription credential format
-  stays OAuth-only; OpenRouter/Zen accept only API-key records.
+  lock. Provider records remain separate. The ChatGPT credential format
+  stays OAuth-only; Kimi Code/OpenRouter/Zen accept only API-key records.
 - Keys and callback codes exist briefly in form/request memory, are cleared on
   submit/cancel/lock and are never returned in status. Public state exposes
   provider names, non-secret flow status and model names only.
@@ -183,6 +249,10 @@ Official references:
 - https://developers.openai.com/siwc/token-sharing-open-source/models-and-inference
 - https://developers.openai.com/siwc/token-sharing-open-source/profiles-and-sessions
 - https://developers.openai.com/siwc/token-sharing-open-source/preview-limitations
+- https://www.kimi.com/code/docs/en/
+- https://www.kimi.com/code/docs/en/kimi-code/models.html
+- https://www.kimi.com/code/docs/en/third-party-tools/codex.html
+- https://www.kimi.com/code/docs/en/third-party-tools/hermes.html
 - https://openrouter.ai/docs/api-reference/authentication
 - https://openrouter.ai/docs/api-reference/limits
 - https://opencode.ai/v2/docs/console/api/inference/

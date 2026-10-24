@@ -336,6 +336,7 @@ function renderHistory(state) {
 }
 const providerNames = {
   openai: "ChatGPT subscription",
+  "kimi-code": "Kimi Code",
   openrouter: "OpenRouter",
   "opencode-zen": "OpenCode Zen",
   "opencode-go": "OpenCode Go",
@@ -343,7 +344,18 @@ const providerNames = {
 function isPaidModel(id) {
   return id.startsWith("openrouter::") || id.startsWith("opencode-zen::");
 }
+function isKimiModel(id) {
+  return id.startsWith("kimi-code::");
+}
+const kimiUsageNotice =
+  "Kimi Code's official subscription guidelines restrict noninteractive automation. Background jobs remain enabled here. You are responsible for checking that this use is eligible under your plan.";
 function modelLabel(id) {
+  if (isKimiModel(id))
+    return (
+      "Kimi Code · " +
+      (id === "kimi-code::k3.1-pro" ? "K3.1 Pro" : id.split("::")[1]) +
+      " (subscription)"
+    );
   const separator = id.indexOf("::");
   if (separator < 0)
     return (
@@ -361,8 +373,9 @@ function modelLabel(id) {
 }
 function renderModelBilling() {
   const id = $("modelSelect").value;
-  $("modelBilling").textContent =
-    isPaidModel(id) || ui.latest?.inference.mode === "paid-api"
+  $("modelBilling").textContent = isKimiModel(id)
+    ? "Uses your Kimi Code subscription allowance, including background memory summaries. No automatic paid fallback."
+    : isPaidModel(id) || ui.latest?.inference.mode === "paid-api"
       ? "Metered API · selecting this model requires confirmation. Usage consumes your existing credits or bills your provider account."
       : id
         ? "Uses your ChatGPT subscription allowance. No automatic paid fallback."
@@ -505,10 +518,25 @@ function renderProviders() {
           "span",
           id === "openai"
             ? "Subscription allowance"
-            : "Metered API · existing credits / usage billing",
+            : id === "kimi-code"
+              ? "Personal interactive subscription allowance"
+              : "Metered API · existing credits / usage billing",
           "provider-cost",
         ),
       );
+      if (id === "kimi-code") {
+        card.append(element("p", kimiUsageNotice, "hint"));
+        for (const [label, href] of [
+          ["Open Kimi Code console ↗", "https://www.kimi.com/code/console"],
+          ["Kimi Code documentation ↗", "https://www.kimi.com/code/docs/en/"],
+        ]) {
+          const link = element("a", label, "provider-docs");
+          link.setAttribute("href", href);
+          link.setAttribute("target", "_blank");
+          link.setAttribute("rel", "noopener noreferrer");
+          card.append(link);
+        }
+      }
       if (id !== "openai" || !provider.connected)
         card.append(
           providerControl(
@@ -529,6 +557,11 @@ function renderProviders() {
               wipeProviderInputs();
               $("providerKeyTitle").textContent =
                 "Connect " + providerNames[id];
+              $("providerKeyBilling").textContent =
+                id === "kimi-code"
+                  ? "This key uses your Kimi Code subscription allowance for personal interactive use. Saving it does not select a model or start inference. " +
+                    kimiUsageNotice
+                  : "This is a metered API. Using its models consumes your existing provider credits or bills your provider account. Saving a key does not select a model or start inference.";
               $("providerKeyForm").hidden = false;
               $("providerKey").focus();
             },
@@ -800,7 +833,7 @@ function subscriptionExperimentModel(state) {
   const id = inference?.selected;
   return inference?.mode === "subscription" &&
     id &&
-    !id.includes("::") &&
+    (!id.includes("::") || isKimiModel(id)) &&
     inference.models.includes(id)
     ? id
     : null;
@@ -946,7 +979,7 @@ function renderConnection(state) {
   const select = $("modelSelect");
   const selected = select.value;
   const models = inference.models || [];
-  const choices = models.some((id) => !isPaidModel(id))
+  const choices = models.some((id) => !id.includes("::"))
     ? models
     : ["", ...models];
   const same =
@@ -967,7 +1000,7 @@ function renderConnection(state) {
   else {
     select.value = models.includes(inference.selected)
       ? inference.selected
-      : models.find((id) => !isPaidModel(id)) || "";
+      : models.find((id) => !id.includes("::")) || "";
     ui.modelDirty = false;
   }
   renderModelBilling();
@@ -1916,7 +1949,9 @@ $("providerKeyForm").onsubmit = (event) => {
     await refresh();
     check();
     notice(
-      "Key saved on this host. Choose a model separately to enable metered inference.",
+      id === "kimi-code"
+        ? "Kimi Code key saved on this host. Choose K3.1 Pro separately to use your subscription allowance."
+        : "Key saved on this host. Choose a model separately to enable metered inference.",
     );
   });
 };
@@ -1952,6 +1987,7 @@ $("setModel").onclick = () =>
       return;
     const paid = isPaidModel(id);
     if (
+      !isKimiModel(id) &&
       (paid || ui.latest.inference.mode === "paid-api") &&
       !confirm(
         "Use " +
@@ -2172,7 +2208,7 @@ $("configureExperiment").onclick = () =>
           modelId +
           "? Goal: " +
           goal +
-          ". Hard limits: 6 generation dispatches, 1 proposal, 1 test; expires in one hour. Requested output-token allowance: 24576, reserved for planning only. ChatGPT does not enforce a provider output cap; actual output may exceed the allowance. Reported usage is recorded and further work stops when over allowance. Subscription only, no paid inference or external access. No activation. Hosting costs are not metered.",
+          ". Hard limits: 6 generation dispatches, 1 proposal, 1 test; expires in one hour. Requested output-token allowance: 24576, reserved for planning only. Do not rely on this allowance as a provider output cap; actual output may exceed the allowance. Reported usage is recorded and further work stops when over allowance. Subscription only, no paid inference or external access. No activation. Hosting costs are not metered.",
       )
     )
       return;

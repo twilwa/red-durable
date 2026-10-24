@@ -392,8 +392,9 @@
                 </button>
               </div>
               <p>
-                Start with your ChatGPT subscription, or explicitly choose a
-                metered API. Your owner token and provider sign-in are separate.
+                Start with your ChatGPT subscription, or explicitly choose Kimi
+                Code for personal interactive use or a metered API. Your owner
+                token and provider connection are separate.
               </p>
               <p id="providerStatus" class="hint" role="status"></p>
               <div id="providerGuide" class="callout" hidden>
@@ -418,11 +419,7 @@
                 autocomplete="off"
               >
                 <h4 id="providerKeyTitle">Connect an API key</h4>
-                <p class="callout">
-                  This is a metered API. Using its models consumes your existing
-                  provider credits or bills your provider account. Saving a key
-                  does not select a model or start inference.
-                </p>
+                <p id="providerKeyBilling" class="callout"></p>
                 <p class="hint">
                   The key will be stored on this trusted inference host. It is
                   never saved in browser storage or sent to the Worker.

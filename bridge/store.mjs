@@ -97,7 +97,9 @@ export async function openStore(directory, { bootstrapHostId } = {}) {
   };
   const readCredential = async (provider) => {
     await assertCredentialReady();
-    if (!["openai", "openrouter", "opencode-zen"].includes(provider))
+    if (
+      !["openai", "openrouter", "opencode-zen", "kimi-code"].includes(provider)
+    )
       return undefined;
     return (await read("credentials.json"))?.[provider];
   };
@@ -109,13 +111,17 @@ export async function openStore(directory, { bootstrapHostId } = {}) {
       serial(async () => {
         await assertCredentialReady();
         const values = (await read("credentials.json")) ?? {};
-        return ["openai", "openrouter", "opencode-zen"]
+        return ["openai", "openrouter", "opencode-zen", "kimi-code"]
           .filter((id) => values[id])
           .map((providerId) => ({ providerId, type: values[providerId].type }));
       }),
     modify: (provider, fn) =>
       serial(async () => {
-        if (!["openai", "openrouter", "opencode-zen"].includes(provider))
+        if (
+          !["openai", "openrouter", "opencode-zen", "kimi-code"].includes(
+            provider,
+          )
+        )
           throw new Error("Unsupported credential provider");
         const current = await readCredential(provider);
         // Persist before calling a function that may consume a rotating refresh token.
@@ -142,7 +148,11 @@ export async function openStore(directory, { bootstrapHostId } = {}) {
     delete: (provider = "openai") =>
       serial(async () => {
         await assertCredentialReady();
-        if (!["openai", "openrouter", "opencode-zen"].includes(provider))
+        if (
+          !["openai", "openrouter", "opencode-zen", "kimi-code"].includes(
+            provider,
+          )
+        )
           throw new Error("Unsupported credential provider");
         const all = (await read("credentials.json")) ?? {};
         delete all[provider];

@@ -127,7 +127,10 @@ class RedClient {
     return this.request("providers/key", {
       providerId,
       apiKey,
-      confirm: "STORE_METERED_KEY",
+      confirm:
+        providerId === "kimi-code"
+          ? "STORE_SUBSCRIPTION_KEY"
+          : "STORE_METERED_KEY",
     });
   }
   /** @returns {Promise<import('../ui/contracts').ProviderFlow>} */

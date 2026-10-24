@@ -1,13 +1,14 @@
 /** Public model identifiers carry routing intent, never credentials/endpoints. */
 export function modelProvider(
   id: string,
-): "openai" | "openrouter" | "opencode-zen" {
+): "openai" | "openrouter" | "opencode-zen" | "kimi-code" {
+  if (id.startsWith("kimi-code::")) return "kimi-code";
   if (id.startsWith("openrouter::")) return "openrouter";
   if (id.startsWith("opencode-zen::")) return "opencode-zen";
   return "openai";
 }
 export function isMeteredModel(id: string): boolean {
-  return modelProvider(id) !== "openai";
+  return ["openrouter", "opencode-zen"].includes(modelProvider(id));
 }
 export function validBridgeModel(id: unknown): id is string {
   if (
@@ -19,7 +20,7 @@ export function validBridgeModel(id: unknown): id is string {
   if (!id.includes("::")) return true;
   const [provider, model, extra] = id.split("::");
   return (
-    ["openrouter", "opencode-zen"].includes(provider) &&
+    ["openrouter", "opencode-zen", "kimi-code"].includes(provider) &&
     Boolean(model) &&
     extra === undefined &&
     /^[A-Za-z0-9][A-Za-z0-9_.:@+/-]*$/.test(model)
